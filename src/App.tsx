@@ -744,7 +744,7 @@ function App() {
                     checked={formFocusWindow}
                     onChange={(e) => setFormFocusWindow(e.target.checked)}
                   />
-                  <span>Bring window to front</span>
+                  <span>Bring window to front (without focus on Windows)</span>
                 </label>
                 <label className="toggle-label">
                   <input

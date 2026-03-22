@@ -640,13 +640,72 @@ fn send_notification(app_handle: &AppHandle) {
     }
 }
 
-/// Unminimize, show, and focus the main application window so it comes to the
-/// front of all other windows.  Errors are logged but not propagated.
+/// Surface the main application window so it is visible to the user.
+///
+/// On Windows we try to raise the window without stealing focus. Other
+/// platforms keep the existing focus-based behavior for now.
 fn bring_window_to_front(app_handle: &AppHandle) {
+    #[cfg(target_os = "windows")]
+    {
+        bring_window_to_front_without_focus_on_windows(app_handle);
+        return;
+    }
+
+    #[cfg(not(target_os = "windows"))]
     if let Some(win) = app_handle.get_webview_window("main") {
         let _ = win.unminimize();
         let _ = win.show();
         let _ = win.set_focus();
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn bring_window_to_front_without_focus_on_windows(app_handle: &AppHandle) {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use windows_sys::Win32::{
+        Foundation::HWND,
+        UI::WindowsAndMessaging::{
+            HWND_NOTOPMOST, HWND_TOPMOST, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOMOVE,
+            SWP_NOSIZE, SWP_SHOWWINDOW, SW_SHOWNOACTIVATE, SetWindowPos, ShowWindow,
+        },
+    };
+
+    let Some(win) = app_handle.get_webview_window("main") else {
+        return;
+    };
+
+    let window_handle = match win.window_handle() {
+        Ok(handle) => handle,
+        Err(e) => {
+            eprintln!("[water-reminder] Failed to get native window handle: {e}");
+            let _ = win.show();
+            return;
+        }
+    };
+
+    let hwnd = match window_handle.as_raw() {
+        RawWindowHandle::Win32(handle) => handle.hwnd.get() as HWND,
+        _ => {
+            eprintln!("[water-reminder] Unexpected non-Win32 window handle on Windows.");
+            let _ = win.show();
+            return;
+        }
+    };
+
+    unsafe {
+        ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+
+        let flags =
+            SWP_ASYNCWINDOWPOS | SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW;
+
+        if SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags) == 0 {
+            eprintln!("[water-reminder] Failed to raise reminder window to topmost.");
+            return;
+        }
+
+        if SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, flags) == 0 {
+            eprintln!("[water-reminder] Failed to restore reminder window to non-topmost.");
+        }
     }
 }
 

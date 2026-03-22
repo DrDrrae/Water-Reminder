@@ -31,7 +31,7 @@ Settings are automatically saved to disk with a short debounce — nothing is lo
 | Desktop notification | OS-native (Windows, macOS, Linux) |
 | Alert sound | Synthesized 440 → 880 Hz tone; no audio file needed |
 | Repeating alert sound | Optional 10-second repeats until you acknowledge or snooze |
-| Window focus | Brings app to front on reminder |
+| Window focus | Surfaces the app on reminder; on Windows it does not steal focus |
 | Taskbar / dock flash | Flashes taskbar (Windows) or bounces dock icon (macOS) |
 | Pause / resume | Saves exact remaining time; counter is preserved |
 | Persistent settings | Saved to `settings.json` in the OS app data directory |
@@ -62,7 +62,7 @@ Stopped → Running → (reminder fires) → WaitingAck ⟶ Running
 | Require acknowledgment | On | On / Off | Pauses after each reminder until you confirm |
 | Play sound | On | On / Off | Alert tone on reminder |
 | Repeat sound until action | On | On / Off | Replays every 10 seconds while waiting for acknowledgment |
-| Focus window | On | On / Off | Brings window to front on reminder |
+| Focus window | On | On / Off | Brings window to front; on Windows this avoids stealing focus |
 | Flash taskbar | On | On / Off | Flashes taskbar / bounces dock icon on reminder |
 
 > **Note:** All settings are locked while the timer is Running or Paused. Stop the timer first to change them.
@@ -149,7 +149,7 @@ The packaged installer is written to `src-tauri/target/release/bundle/`.
 
 ## Platform notes
 
-- **Windows** – taskbar flash uses the `Critical` attention type, which flashes both the window frame and the taskbar button until the app is focused.
+- **Windows** – taskbar flash uses the `Critical` attention type, which flashes both the window frame and the taskbar button until the app is focused. If **Focus window** is enabled, the app is also raised above other windows without taking keyboard focus.
 - **macOS** – dock bounce uses the `Critical` attention type (continuous bounce until focused); bundle identifier is `com.waterreminder.desktop`.
 - **Linux** – taskbar flash behaviour depends on the window manager (GNOME, KDE, i3, etc.) and is not guaranteed.
 - **Audio** – the alert tone uses the Web Audio API inside the WebView. It may be silenced by OS-level mute or by WebView autoplay restrictions in unusual configurations.
