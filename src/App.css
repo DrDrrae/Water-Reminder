@@ -183,13 +183,66 @@ body {
 /* ============================================================
    Settings card
    ============================================================ */
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .settings-card h2 {
   font-size: 1rem;
   font-weight: 700;
   color: var(--color-primary-dark);
-  margin-bottom: 2px;
+  margin-bottom: 0;
   text-transform: uppercase;
   letter-spacing: 0.06em;
+}
+
+.settings-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: var(--color-primary-dark);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.settings-toggle:hover {
+  background: var(--color-primary-light);
+  border-color: #a9c7f5;
+  color: var(--color-primary);
+}
+
+.settings-chevron {
+  font-size: 0.65rem;
+  line-height: 1;
+}
+
+.settings-body {
+  overflow: hidden;
+  max-height: 900px;
+  opacity: 1;
+  visibility: visible;
+  padding-top: 12px;
+  transition: max-height 0.28s ease, opacity 0.2s ease, padding-top 0.2s ease,
+    visibility 0s linear 0s;
+}
+
+.settings-body--collapsed {
+  max-height: 0;
+  opacity: 0;
+  visibility: hidden;
+  padding-top: 0;
+  pointer-events: none;
+  transition: max-height 0.22s ease, opacity 0.15s ease, padding-top 0.15s ease,
+    visibility 0s linear 0.22s;
 }
 
 .settings-hint {

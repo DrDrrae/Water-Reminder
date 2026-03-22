@@ -126,6 +126,9 @@ function App() {
   // Whether to show the snooze button prominently (set true after a reminder fires).
   const [showSnoozeBanner, setShowSnoozeBanner] = useState(false);
 
+  // Whether the settings panel is expanded.
+  const [settingsOpen, setSettingsOpen] = useState(true);
+
   // Latest error message to show to the user.
   const [error, setError] = useState<string | null>(null);
 
@@ -206,8 +209,8 @@ function App() {
     return () => {
       if (autosaveTimerRef.current !== null) clearTimeout(autosaveTimerRef.current);
     };
-  // Re-run whenever any form field changes.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Re-run whenever any form field changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formInterval, formSnooze, isInfinite, formMaxCount, formRequireAck, formPlaySound, formFocusWindow, formFlashTaskbar]);
 
   // ---------------------------------------------------------------------------
@@ -266,6 +269,11 @@ function App() {
     }, 1_000);
 
     return () => clearInterval(id);
+  }, [remState.status]);
+
+  // Auto-collapse settings when reminders are running to free vertical space.
+  useEffect(() => {
+    if (remState.status === "Running") setSettingsOpen(false);
   }, [remState.status]);
 
   // ---------------------------------------------------------------------------
@@ -445,148 +453,6 @@ function App() {
         </section>
       )}
 
-      {/* ── Settings card ── */}
-      <section className="card settings-card" aria-label="Reminder settings">
-        <h2>Settings</h2>
-        <p className="settings-hint">
-          {canEdit
-            ? "Settings are saved automatically as you type."
-            : "Stop the timer to change settings."}
-        </p>
-
-        {/* Interval */}
-        <div className="form-group">
-          <label htmlFor="interval-input">
-            Reminder Interval
-            <span className="unit-label">(minutes)</span>
-          </label>
-          <input
-            id="interval-input"
-            type="number"
-            min={1}
-            max={1440}
-            value={formInterval}
-            disabled={!canEdit}
-            onChange={(e) =>
-              setFormInterval(Math.max(1, parseInt(e.target.value) || 1))
-            }
-            aria-describedby="interval-desc"
-          />
-          <span id="interval-desc" className="field-hint">
-            How frequently you want to be reminded (1–1440 min).
-          </span>
-        </div>
-
-        {/* Max reminders */}
-        <div className="form-group">
-          <fieldset disabled={!canEdit}>
-            <legend>
-              Maximum Reminders
-            </legend>
-            <div className="radio-group">
-              {/* Infinite option */}
-              <label className="radio-label">
-                <input
-                  type="radio"
-                  name="max-count"
-                  checked={isInfinite}
-                  onChange={() => setIsInfinite(true)}
-                />
-                Infinite (never stop automatically)
-              </label>
-
-              {/* Limited option */}
-              <label className="radio-label">
-                <input
-                  type="radio"
-                  name="max-count"
-                  checked={!isInfinite}
-                  onChange={() => setIsInfinite(false)}
-                />
-                Limited:&nbsp;
-                <input
-                  type="number"
-                  min={1}
-                  max={9999}
-                  value={formMaxCount}
-                  disabled={isInfinite}
-                  className="inline-number"
-                  aria-label="Maximum reminder count"
-                  onChange={(e) =>
-                    setFormMaxCount(Math.max(1, parseInt(e.target.value) || 1))
-                  }
-                />
-                &nbsp;reminders
-              </label>
-            </div>
-          </fieldset>
-        </div>
-
-        {/* Snooze duration */}
-        <div className="form-group">
-          <label htmlFor="snooze-input">
-            Snooze Duration
-            <span className="unit-label">(minutes)</span>
-          </label>
-          <input
-            id="snooze-input"
-            type="number"
-            min={1}
-            max={60}
-            value={formSnooze}
-            disabled={!canEdit}
-            onChange={(e) =>
-              setFormSnooze(Math.max(1, parseInt(e.target.value) || 1))
-            }
-            aria-describedby="snooze-desc"
-          />
-          <span id="snooze-desc" className="field-hint">
-            How long to delay the reminder when you snooze it (1–60 min).
-          </span>
-        </div>
-
-        {/* Notification behaviour toggles */}
-        <div className="form-group">
-          <fieldset disabled={!canEdit}>
-            <legend>Notification Behavior</legend>
-            <div className="toggle-group">
-              <label className="toggle-label">
-                <input
-                  type="checkbox"
-                  checked={formRequireAck}
-                  onChange={(e) => setFormRequireAck(e.target.checked)}
-                />
-                <span>Require acknowledgment before next reminder</span>
-              </label>
-              <label className="toggle-label">
-                <input
-                  type="checkbox"
-                  checked={formPlaySound}
-                  onChange={(e) => setFormPlaySound(e.target.checked)}
-                />
-                <span>Play alert sound</span>
-              </label>
-              <label className="toggle-label">
-                <input
-                  type="checkbox"
-                  checked={formFocusWindow}
-                  onChange={(e) => setFormFocusWindow(e.target.checked)}
-                />
-                <span>Bring window to front</span>
-              </label>
-              <label className="toggle-label">
-                <input
-                  type="checkbox"
-                  checked={formFlashTaskbar}
-                  onChange={(e) => setFormFlashTaskbar(e.target.checked)}
-                />
-                <span>Flash taskbar / dock icon</span>
-              </label>
-            </div>
-          </fieldset>
-        </div>
-      </section>
-
       {/* ── Controls card ── */}
       <section className="card controls-card" aria-label="Timer controls">
         {/* Error banner */}
@@ -655,6 +521,171 @@ function App() {
             💤 Snooze ({remState.config.snooze_minutes} min)
           </button>
         )}
+      </section>
+
+      {/* ── Settings card ── */}
+      <section className="card settings-card" aria-label="Reminder settings">
+        <div className="settings-header">
+          <h2 id="settings-title">Settings</h2>
+          <button
+            type="button"
+            className="settings-toggle"
+            onClick={() => setSettingsOpen((open) => !open)}
+            aria-expanded={settingsOpen}
+            aria-controls="settings-body"
+            aria-label={settingsOpen ? "Collapse settings" : "Expand settings"}
+          >
+            <span>{settingsOpen ? "Collapse" : "Expand"}</span>
+            <span className="settings-chevron" aria-hidden="true">
+              {settingsOpen ? "▲" : "▼"}
+            </span>
+          </button>
+        </div>
+
+        <div
+          id="settings-body"
+          className={`settings-body${settingsOpen ? "" : " settings-body--collapsed"}`}
+          aria-labelledby="settings-title"
+          aria-hidden={!settingsOpen}
+        >
+          <p className="settings-hint">
+            {canEdit
+              ? "Settings are saved automatically as you type."
+              : "Stop the timer to change settings."}
+          </p>
+
+          {/* Interval */}
+          <div className="form-group">
+            <label htmlFor="interval-input">
+              Reminder Interval
+              <span className="unit-label">(minutes)</span>
+            </label>
+            <input
+              id="interval-input"
+              type="number"
+              min={1}
+              max={1440}
+              value={formInterval}
+              disabled={!canEdit}
+              onChange={(e) =>
+                setFormInterval(Math.max(1, parseInt(e.target.value) || 1))
+              }
+              aria-describedby="interval-desc"
+            />
+            <span id="interval-desc" className="field-hint">
+              How frequently you want to be reminded (1–1440 min).
+            </span>
+          </div>
+
+          {/* Max reminders */}
+          <div className="form-group">
+            <fieldset disabled={!canEdit}>
+              <legend>
+                Maximum Reminders
+              </legend>
+              <div className="radio-group">
+                {/* Infinite option */}
+                <label className="radio-label">
+                  <input
+                    type="radio"
+                    name="max-count"
+                    checked={isInfinite}
+                    onChange={() => setIsInfinite(true)}
+                  />
+                  Infinite (never stop automatically)
+                </label>
+
+                {/* Limited option */}
+                <label className="radio-label">
+                  <input
+                    type="radio"
+                    name="max-count"
+                    checked={!isInfinite}
+                    onChange={() => setIsInfinite(false)}
+                  />
+                  Limited:&nbsp;
+                  <input
+                    type="number"
+                    min={1}
+                    max={9999}
+                    value={formMaxCount}
+                    disabled={isInfinite}
+                    className="inline-number"
+                    aria-label="Maximum reminder count"
+                    onChange={(e) =>
+                      setFormMaxCount(Math.max(1, parseInt(e.target.value) || 1))
+                    }
+                  />
+                  &nbsp;reminders
+                </label>
+              </div>
+            </fieldset>
+          </div>
+
+          {/* Snooze duration */}
+          <div className="form-group">
+            <label htmlFor="snooze-input">
+              Snooze Duration
+              <span className="unit-label">(minutes)</span>
+            </label>
+            <input
+              id="snooze-input"
+              type="number"
+              min={1}
+              max={60}
+              value={formSnooze}
+              disabled={!canEdit}
+              onChange={(e) =>
+                setFormSnooze(Math.max(1, parseInt(e.target.value) || 1))
+              }
+              aria-describedby="snooze-desc"
+            />
+            <span id="snooze-desc" className="field-hint">
+              How long to delay the reminder when you snooze it (1–60 min).
+            </span>
+          </div>
+
+          {/* Notification behaviour toggles */}
+          <div className="form-group">
+            <fieldset disabled={!canEdit}>
+              <legend>Notification Behavior</legend>
+              <div className="toggle-group">
+                <label className="toggle-label">
+                  <input
+                    type="checkbox"
+                    checked={formRequireAck}
+                    onChange={(e) => setFormRequireAck(e.target.checked)}
+                  />
+                  <span>Require acknowledgment before next reminder</span>
+                </label>
+                <label className="toggle-label">
+                  <input
+                    type="checkbox"
+                    checked={formPlaySound}
+                    onChange={(e) => setFormPlaySound(e.target.checked)}
+                  />
+                  <span>Play alert sound</span>
+                </label>
+                <label className="toggle-label">
+                  <input
+                    type="checkbox"
+                    checked={formFocusWindow}
+                    onChange={(e) => setFormFocusWindow(e.target.checked)}
+                  />
+                  <span>Bring window to front</span>
+                </label>
+                <label className="toggle-label">
+                  <input
+                    type="checkbox"
+                    checked={formFlashTaskbar}
+                    onChange={(e) => setFormFlashTaskbar(e.target.checked)}
+                  />
+                  <span>Flash taskbar / dock icon</span>
+                </label>
+              </div>
+            </fieldset>
+          </div>
+        </div>
       </section>
     </div>
   );
