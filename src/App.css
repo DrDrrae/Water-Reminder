@@ -402,7 +402,110 @@ fieldset:disabled .radio-label {
   background: #e1bee7;
 }
 
-@keyframes pulse-snooze {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(106, 27, 154, 0.0); }
-  50%       { box-shadow: 0 0 0 5px rgba(106, 27, 154, 0.15); }
+/* Status badge for WaitingAck state */
+.status-waitingack {
+  background: #fff8e1;
+  color: #f57f17;
+  border: 1px solid #ffe082;
+  animation: pulse-waiting 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-waiting {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 127, 23, 0.0); }
+  50%       { box-shadow: 0 0 0 5px rgba(245, 127, 23, 0.2); }
+}
+
+/* ============================================================
+   Acknowledgment card
+   ============================================================ */
+.ack-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  background: linear-gradient(135deg, #fff8e1 0%, #e8f5e9 100%);
+  border: 2px solid #ffe082;
+  animation: ack-entrance 0.3s ease-out;
+}
+
+@keyframes ack-entrance {
+  from { transform: translateY(-8px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+.ack-icon {
+  font-size: 2.8rem;
+  line-height: 1;
+  animation: float 2s ease-in-out infinite;
+}
+
+.ack-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #e65100;
+  margin: 0;
+}
+
+.ack-subtitle {
+  font-size: 0.88rem;
+  color: var(--color-text-muted);
+  text-align: center;
+  margin: 0;
+}
+
+.ack-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+/* Acknowledge button */
+.btn-acknowledge {
+  width: 100%;
+  padding: 12px;
+  background: var(--color-success);
+  color: #ffffff;
+  border: none;
+  font-size: 1.05rem;
+  font-weight: 700;
+  border-radius: var(--radius-sm);
+}
+.btn-acknowledge:hover:not(:disabled) {
+  background: #1b5e20;
+}
+
+/* ============================================================
+   Toggle (checkbox) group for notification settings
+   ============================================================ */
+.toggle-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.toggle-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.toggle-label input[type="checkbox"] {
+  margin-top: 2px;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--color-primary);
+}
+
+fieldset:disabled .toggle-label {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+fieldset:disabled .toggle-label input {
+  cursor: not-allowed;
 }
