@@ -14,6 +14,7 @@ Water Reminder sits quietly on your desktop and fires a periodic hydration remin
 - Flash the Windows taskbar or bounce the macOS dock icon.
 
 If you want to be honest about actually drinking water, enable **Require Acknowledgment**: the timer pauses after every reminder and only resumes once you click "I Drank Water!". You can also snooze a reminder to delay it by a configurable number of minutes.
+If sound is enabled, you can also have the app repeat the alert tone every 10 seconds until you acknowledge or snooze the reminder.
 
 Settings are automatically saved to disk with a short debounce — nothing is lost if you close and reopen the app.
 
@@ -29,6 +30,7 @@ Settings are automatically saved to disk with a short debounce — nothing is lo
 | Require acknowledgment | Blocks the timer until you confirm you drank water |
 | Desktop notification | OS-native (Windows, macOS, Linux) |
 | Alert sound | Synthesized 440 → 880 Hz tone; no audio file needed |
+| Repeating alert sound | Optional 10-second repeats until you acknowledge or snooze |
 | Window focus | Brings app to front on reminder |
 | Taskbar / dock flash | Flashes taskbar (Windows) or bounces dock icon (macOS) |
 | Pause / resume | Saves exact remaining time; counter is preserved |
@@ -59,6 +61,7 @@ Stopped → Running → (reminder fires) → WaitingAck ⟶ Running
 | Snooze duration | 5 min | 1 – 60 min | Delay applied by the Snooze button |
 | Require acknowledgment | On | On / Off | Pauses after each reminder until you confirm |
 | Play sound | On | On / Off | Alert tone on reminder |
+| Repeat sound until action | On | On / Off | Replays every 10 seconds while waiting for acknowledgment |
 | Focus window | On | On / Off | Brings window to front on reminder |
 | Flash taskbar | On | On / Off | Flashes taskbar / bounces dock icon on reminder |
 

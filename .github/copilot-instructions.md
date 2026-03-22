@@ -56,7 +56,7 @@ There are no test or lint scripts defined.
 
 **Settings persistence:** `tauri-plugin-store` writes to `settings.json` in the platform app data directory. Read on startup via `get_status` (which loads from store), write via `save_config`.
 
-**Alert sound:** A synthesized 440→880 Hz tone via the Web Audio API in `playAlertSound()`. No audio files; no external dependencies.
+**Alert sound:** A synthesized 440→880 Hz tone via the Web Audio API in `playAlertSound()`. No audio files; no external dependencies. The initial sound plays from the `reminder-fired` event listener, and any 10-second repeat-until-action behavior is managed in React while the app is in `WaitingAck`.
 
 **Validation is in Rust.** `save_config` returns `Result<StateSnapshot, String>`. The TypeScript side displays the error string if `Err` is returned.
 

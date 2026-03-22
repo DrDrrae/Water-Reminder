@@ -18,6 +18,8 @@ interface ReminderConfig {
   require_acknowledgment: boolean;
   /** When true, an alert sound is played when a reminder fires. */
   play_sound: boolean;
+  /** When true, the alert sound repeats every 10 seconds until the reminder is resolved. */
+  repeat_sound_until_action: boolean;
   /** When true, the window is brought to the front when a reminder fires. */
   focus_window: boolean;
   /** When true, the taskbar / dock icon flashes when a reminder fires. */
@@ -90,6 +92,7 @@ const DEFAULT_CONFIG: ReminderConfig = {
   snooze_minutes: 5,
   require_acknowledgment: true,
   play_sound: true,
+  repeat_sound_until_action: true,
   focus_window: true,
   flash_taskbar: true,
 };
@@ -104,6 +107,7 @@ const DEFAULT_STATE: StateSnapshot = {
 
 // How long to wait (ms) after the last form change before auto-saving.
 const AUTOSAVE_DEBOUNCE_MS = 500;
+const ALERT_REPEAT_INTERVAL_MS = 10_000;
 
 // ---------------------------------------------------------------------------
 // App component
@@ -120,6 +124,9 @@ function App() {
   const [formMaxCount, setFormMaxCount] = useState(10);
   const [formRequireAck, setFormRequireAck] = useState(DEFAULT_CONFIG.require_acknowledgment);
   const [formPlaySound, setFormPlaySound] = useState(DEFAULT_CONFIG.play_sound);
+  const [formRepeatSoundUntilAction, setFormRepeatSoundUntilAction] = useState(
+    DEFAULT_CONFIG.repeat_sound_until_action,
+  );
   const [formFocusWindow, setFormFocusWindow] = useState(DEFAULT_CONFIG.focus_window);
   const [formFlashTaskbar, setFormFlashTaskbar] = useState(DEFAULT_CONFIG.flash_taskbar);
 
@@ -137,6 +144,9 @@ function App() {
 
   // Ref to store the debounce timer for auto-saving settings.
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Ref to store the repeating sound timer while waiting for acknowledgment.
+  const repeatSoundTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Flag that tells the auto-save effect to skip the very first render,
   // since the initial values come from the backend (not from user input).
@@ -166,6 +176,7 @@ function App() {
         setFormMaxCount(snapshot.config.max_count ?? 10);
         setFormRequireAck(snapshot.config.require_acknowledgment);
         setFormPlaySound(snapshot.config.play_sound);
+        setFormRepeatSoundUntilAction(snapshot.config.repeat_sound_until_action);
         setFormFocusWindow(snapshot.config.focus_window);
         setFormFlashTaskbar(snapshot.config.flash_taskbar);
         // Mark the initial load as done so subsequent changes auto-save.
@@ -195,6 +206,7 @@ function App() {
         snooze_minutes: formSnooze,
         require_acknowledgment: formRequireAck,
         play_sound: formPlaySound,
+        repeat_sound_until_action: formRepeatSoundUntilAction,
         focus_window: formFocusWindow,
         flash_taskbar: formFlashTaskbar,
       };
@@ -211,7 +223,47 @@ function App() {
     };
     // Re-run whenever any form field changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formInterval, formSnooze, isInfinite, formMaxCount, formRequireAck, formPlaySound, formFocusWindow, formFlashTaskbar]);
+  }, [
+    formInterval,
+    formSnooze,
+    isInfinite,
+    formMaxCount,
+    formRequireAck,
+    formPlaySound,
+    formRepeatSoundUntilAction,
+    formFocusWindow,
+    formFlashTaskbar,
+  ]);
+
+  useEffect(() => {
+    if (repeatSoundTimerRef.current !== null) {
+      clearInterval(repeatSoundTimerRef.current);
+      repeatSoundTimerRef.current = null;
+    }
+
+    if (
+      remState.status !== "WaitingAck" ||
+      !remState.config.play_sound ||
+      !remState.config.repeat_sound_until_action
+    ) {
+      return;
+    }
+
+    repeatSoundTimerRef.current = setInterval(() => {
+      playAlertSound();
+    }, ALERT_REPEAT_INTERVAL_MS);
+
+    return () => {
+      if (repeatSoundTimerRef.current !== null) {
+        clearInterval(repeatSoundTimerRef.current);
+        repeatSoundTimerRef.current = null;
+      }
+    };
+  }, [
+    remState.status,
+    remState.config.play_sound,
+    remState.config.repeat_sound_until_action,
+  ]);
 
   // ---------------------------------------------------------------------------
   // Subscribe to backend events
@@ -251,6 +303,7 @@ function App() {
     return () => {
       unlisteners.forEach((fn) => fn());
       if (snoozeTimerRef.current !== null) clearTimeout(snoozeTimerRef.current);
+      if (repeatSoundTimerRef.current !== null) clearInterval(repeatSoundTimerRef.current);
     };
   }, []);
 
@@ -287,9 +340,20 @@ function App() {
     snooze_minutes: formSnooze,
     require_acknowledgment: formRequireAck,
     play_sound: formPlaySound,
+    repeat_sound_until_action: formRepeatSoundUntilAction,
     focus_window: formFocusWindow,
     flash_taskbar: formFlashTaskbar,
-  }), [formInterval, isInfinite, formMaxCount, formSnooze, formRequireAck, formPlaySound, formFocusWindow, formFlashTaskbar]);
+  }), [
+    formInterval,
+    isInfinite,
+    formMaxCount,
+    formSnooze,
+    formRequireAck,
+    formPlaySound,
+    formRepeatSoundUntilAction,
+    formFocusWindow,
+    formFlashTaskbar,
+  ]);
 
   /** Start the reminder timer with the current settings. */
   const handleStart = useCallback(async () => {
@@ -665,6 +729,14 @@ function App() {
                     onChange={(e) => setFormPlaySound(e.target.checked)}
                   />
                   <span>Play alert sound</span>
+                </label>
+                <label className="toggle-label">
+                  <input
+                    type="checkbox"
+                    checked={formRepeatSoundUntilAction}
+                    onChange={(e) => setFormRepeatSoundUntilAction(e.target.checked)}
+                  />
+                  <span>Repeat sound every 10 seconds until acknowledged or snoozed</span>
                 </label>
                 <label className="toggle-label">
                   <input

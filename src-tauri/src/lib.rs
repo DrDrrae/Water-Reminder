@@ -75,6 +75,10 @@ pub struct ReminderConfig {
     /// fires.
     #[serde(default = "serde_default_true")]
     pub play_sound: bool,
+    /// When `true`, the frontend keeps replaying the alert sound every
+    /// 10 seconds while a reminder is waiting for acknowledgment or snooze.
+    #[serde(default = "serde_default_true")]
+    pub repeat_sound_until_action: bool,
     /// When `true`, the application window is brought to the foreground
     /// whenever a reminder fires.
     #[serde(default = "serde_default_true")]
@@ -93,6 +97,7 @@ impl Default for ReminderConfig {
             snooze_minutes: 5,
             require_acknowledgment: true,
             play_sound: true,
+            repeat_sound_until_action: true,
             focus_window: true,
             flash_taskbar: true,
         }
