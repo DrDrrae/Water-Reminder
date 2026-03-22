@@ -9,7 +9,7 @@ A lightweight, cross-platform desktop application that reminds you to drink wate
 Water Reminder sits quietly on your desktop and fires a periodic hydration reminder at whatever interval you choose (default: 60 minutes). When a reminder fires, it can:
 
 - Send a native OS desktop notification.
-- Play a short alert tone synthesised in the browser audio engine (no external audio file needed).
+- Play a short alert tone synthesized in the browser audio engine (no external audio file needed).
 - Bring the app window to the foreground.
 - Flash the Windows taskbar or bounce the macOS dock icon.
 
@@ -23,12 +23,12 @@ Settings are automatically saved to disk with a short debounce — nothing is lo
 
 | Feature | Details |
 |---|---|
-| Customisable interval | 1 – 1 440 minutes |
+| Customizable interval | 1 – 1 440 minutes |
 | Max reminder count | 1 – 9 999, or unlimited |
 | Snooze | Delays the next reminder by 1 – 60 minutes |
 | Require acknowledgment | Blocks the timer until you confirm you drank water |
 | Desktop notification | OS-native (Windows, macOS, Linux) |
-| Alert sound | Synthesised 440 → 880 Hz tone; no audio file needed |
+| Alert sound | Synthesized 440 → 880 Hz tone; no audio file needed |
 | Window focus | Brings app to front on reminder |
 | Taskbar / dock flash | Flashes taskbar (Windows) or bounces dock icon (macOS) |
 | Pause / resume | Saves exact remaining time; counter is preserved |
@@ -84,7 +84,7 @@ Settings are stored in `settings.json` in the platform app data directory:
 | Backend language | Rust 2021 edition |
 | Notifications plugin | tauri-plugin-notification 2.x |
 | Persistence plugin | tauri-plugin-store 2.x |
-| Serialisation | serde / serde_json |
+| Serialization | serde / serde_json |
 
 ---
 
