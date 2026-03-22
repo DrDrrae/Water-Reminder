@@ -1,0 +1,9 @@
+{
+  "identifier": "default",
+  "description": "Default capability granted to the main application window. Includes core IPC and desktop notifications.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "notification:default"
+  ]
+}

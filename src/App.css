@@ -1,0 +1,408 @@
+/* ============================================================
+   CSS Custom Properties – Water-themed color palette
+   ============================================================ */
+:root {
+  /* Blues */
+  --color-primary:       #1a6cf0;
+  --color-primary-dark:  #1453c2;
+  --color-primary-light: #e8f1fe;
+  --color-secondary:     #00bcd4;
+
+  /* Functional colors */
+  --color-success: #2e7d32;
+  --color-warning: #e65100;
+  --color-danger:  #c62828;
+  --color-snooze:  #6a1b9a;
+
+  /* Neutrals */
+  --color-bg:           #f0f7ff;
+  --color-surface:      #ffffff;
+  --color-border:       #c8ddf8;
+  --color-text:         #0d1f3c;
+  --color-text-muted:   #546e7a;
+  --color-text-on-blue: #ffffff;
+
+  /* Spacing & shape */
+  --radius:  12px;
+  --radius-sm: 6px;
+  --shadow:  0 2px 12px rgba(26, 108, 240, 0.12);
+
+  font-size: 16px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  line-height: 1.5;
+  color: var(--color-text);
+}
+
+/* ============================================================
+   Reset & base
+   ============================================================ */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--color-bg);
+  min-height: 100vh;
+  /* Subtle animated water gradient background */
+  background-image:
+    radial-gradient(ellipse at 20% 10%, rgba(0, 188, 212, 0.12) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 90%, rgba(26, 108, 240, 0.10) 0%, transparent 60%);
+}
+
+/* ============================================================
+   Layout wrapper
+   ============================================================ */
+.app {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ============================================================
+   Header
+   ============================================================ */
+.app-header {
+  text-align: center;
+  padding: 20px 0 6px;
+}
+
+.header-icon {
+  font-size: 3rem;
+  line-height: 1;
+  filter: drop-shadow(0 2px 6px rgba(0, 188, 212, 0.5));
+  animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-6px); }
+}
+
+.app-header h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  letter-spacing: -0.02em;
+  margin-top: 6px;
+}
+
+.tagline {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+/* ============================================================
+   Card – shared base style
+   ============================================================ */
+.card {
+  background: var(--color-surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 18px 20px;
+  border: 1px solid var(--color-border);
+}
+
+/* ============================================================
+   Status card
+   ============================================================ */
+.status-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Status badge */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 18px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  letter-spacing: 0.01em;
+  transition: background 0.3s, color 0.3s;
+}
+
+.status-running {
+  background: #e8f5e9;
+  color: var(--color-success);
+  border: 1px solid #a5d6a7;
+}
+.status-paused {
+  background: #fff3e0;
+  color: var(--color-warning);
+  border: 1px solid #ffcc80;
+}
+.status-stopped {
+  background: #f5f5f5;
+  color: #616161;
+  border: 1px solid #e0e0e0;
+}
+
+/* Countdown */
+.countdown {
+  text-align: center;
+}
+.countdown-label {
+  display: block;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+  margin-bottom: 2px;
+}
+.countdown-time {
+  font-size: 2.2rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary);
+  letter-spacing: -0.02em;
+}
+
+/* Reminder counter */
+.reminder-counter {
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+.counter-number {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   Settings card
+   ============================================================ */
+.settings-card h2 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-primary-dark);
+  margin-bottom: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.settings-hint {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  margin-bottom: 14px;
+}
+
+/* Individual form group */
+.form-group {
+  margin-bottom: 14px;
+}
+.form-group:last-child {
+  margin-bottom: 0;
+}
+
+.form-group label,
+.form-group legend {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: 4px;
+}
+
+.form-group fieldset {
+  border: none;
+  padding: 0;
+}
+
+.unit-label {
+  font-weight: 400;
+  color: var(--color-text-muted);
+  margin-left: 4px;
+}
+
+/* Number input */
+.form-group input[type="number"] {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 0.95rem;
+  color: var(--color-text);
+  background: var(--color-bg);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.form-group input[type="number"]:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(26, 108, 240, 0.15);
+}
+.form-group input[type="number"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Small inline number input (used inside the "Limited" radio label) */
+.inline-number {
+  width: 72px !important;
+  padding: 4px 6px !important;
+  margin: 0 2px;
+  display: inline-block;
+}
+
+/* Radio group */
+.radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.radio-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+fieldset:disabled .radio-label {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Field hint text */
+.field-hint {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  margin-top: 3px;
+}
+
+/* ============================================================
+   Controls card
+   ============================================================ */
+.controls-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Error banner */
+.error-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #ffebee;
+  border: 1px solid #ef9a9a;
+  border-radius: var(--radius-sm);
+  color: var(--color-danger);
+  font-size: 0.85rem;
+}
+.error-dismiss {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  font-size: 0.9rem;
+  padding: 0 4px;
+  line-height: 1;
+  border-radius: 4px;
+}
+.error-dismiss:hover {
+  background: rgba(198, 40, 40, 0.1);
+}
+
+/* 2×2 button grid */
+.button-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+/* ── Base button ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s, opacity 0.15s;
+  user-select: none;
+  white-space: nowrap;
+}
+.btn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Start */
+.btn-start {
+  background: var(--color-primary);
+  color: var(--color-text-on-blue);
+}
+.btn-start:hover:not(:disabled) {
+  background: var(--color-primary-dark);
+}
+
+/* Pause / Resume */
+.btn-pause {
+  background: #fff3e0;
+  color: var(--color-warning);
+  border: 1px solid #ffcc80;
+}
+.btn-pause:hover:not(:disabled) {
+  background: #ffe0b2;
+}
+
+/* Stop */
+.btn-stop {
+  background: #ffebee;
+  color: var(--color-danger);
+  border: 1px solid #ef9a9a;
+}
+.btn-stop:hover:not(:disabled) {
+  background: #ffcdd2;
+}
+
+/* Reset */
+.btn-reset {
+  background: #f5f5f5;
+  color: #424242;
+  border: 1px solid #e0e0e0;
+}
+.btn-reset:hover:not(:disabled) {
+  background: #eeeeee;
+}
+
+/* Snooze – full-width, distinct purple tint */
+.btn-snooze {
+  width: 100%;
+  padding: 12px;
+  background: #f3e5f5;
+  color: var(--color-snooze);
+  border: 1px solid #ce93d8;
+  font-size: 1rem;
+  border-radius: var(--radius-sm);
+  animation: pulse-snooze 2s ease-in-out infinite;
+}
+.btn-snooze:hover:not(:disabled) {
+  background: #e1bee7;
+}
+
+@keyframes pulse-snooze {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(106, 27, 154, 0.0); }
+  50%       { box-shadow: 0 0 0 5px rgba(106, 27, 154, 0.15); }
+}

@@ -1,0 +1,37 @@
+[package]
+name = "water-reminder"
+version = "0.1.0"
+description = "A configurable water reminder application built with Tauri v2"
+authors = []
+edition = "2021"
+
+# The library crate exposes all application logic so that main.rs stays minimal.
+[lib]
+name = "water_reminder_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+# tauri-build must be called from build.rs to generate the Tauri plumbing.
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Core Tauri framework
+tauri = { version = "2", features = [] }
+
+# Desktop notification plugin
+tauri-plugin-notification = "2"
+
+# Persistent key-value store – used to save user settings between sessions
+tauri-plugin-store = "2"
+
+# Serialization – used to pass data between Rust ↔ TypeScript
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# ── Release profile – smaller, faster binary ──────────────────────────────
+[profile.release]
+panic        = "abort"   # Remove panic-unwind machinery
+codegen-units = 1        # Single unit = better inlining / LTO
+opt-level    = "s"       # Optimise for binary size
+lto          = true      # Link-time optimisation
+strip        = true      # Strip debug symbols from the binary
