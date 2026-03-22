@@ -648,7 +648,7 @@ fn bring_window_to_front(app_handle: &AppHandle) {
 /// Ask the OS to flash / bounce the taskbar or dock icon to attract the user's
 /// attention.  Errors are logged but not propagated.
 fn flash_window_taskbar(app_handle: &AppHandle) {
-    use tauri::window::UserAttentionType;
+    use tauri_runtime::UserAttentionType;
     if let Some(win) = app_handle.get_webview_window("main") {
         let _ = win.request_user_attention(Some(UserAttentionType::Critical));
     }
