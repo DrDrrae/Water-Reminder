@@ -40,7 +40,7 @@ function formatCountdown(seconds: number | null): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-/** Default config values used when the app first loads. */
+/** Default config values used when the app first loads (before backend responds). */
 const DEFAULT_CONFIG: ReminderConfig = {
   interval_minutes: 60,
   max_count: null,
@@ -54,6 +54,9 @@ const DEFAULT_STATE: StateSnapshot = {
   reminder_count: 0,
   seconds_until_next: null,
 };
+
+// How long to wait (ms) after the last form change before auto-saving.
+const AUTOSAVE_DEBOUNCE_MS = 500;
 
 // ---------------------------------------------------------------------------
 // App component
@@ -78,8 +81,17 @@ function App() {
   // Ref to store the snooze-banner auto-hide timer so we can cancel it.
   const snoozeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Ref to store the debounce timer for auto-saving settings.
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Flag that tells the auto-save effect to skip the very first render,
+  // since the initial values come from the backend (not from user input).
+  const isInitialLoadRef = useRef(true);
+
   // ---------------------------------------------------------------------------
-  // Load initial state from the backend on first render
+  // Load initial state from the backend on first render.
+  // The backend's setup hook restores the last-saved config, so get_status
+  // returns persisted values from the very first call.
   // ---------------------------------------------------------------------------
   useEffect(() => {
     invoke<StateSnapshot>("get_status")
@@ -90,9 +102,46 @@ function App() {
         setFormSnooze(snapshot.config.snooze_minutes);
         setIsInfinite(snapshot.config.max_count === null);
         setFormMaxCount(snapshot.config.max_count ?? 10);
+        // Mark the initial load as done so subsequent changes auto-save.
+        isInitialLoadRef.current = false;
       })
       .catch((e: unknown) => setError(String(e)));
   }, []);
+
+  // ---------------------------------------------------------------------------
+  // Auto-save settings whenever the user changes a form field.
+  //
+  // A 500 ms debounce prevents a save on every keystroke when typing a number.
+  // The save is skipped during the initial load (when values come from the
+  // backend rather than from user interaction).
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    // Skip the very first render – values are being populated from the backend.
+    if (isInitialLoadRef.current) return;
+
+    // Clear any pending debounce timer.
+    if (autosaveTimerRef.current !== null) clearTimeout(autosaveTimerRef.current);
+
+    autosaveTimerRef.current = setTimeout(() => {
+      const config: ReminderConfig = {
+        interval_minutes: formInterval,
+        max_count: isInfinite ? null : formMaxCount,
+        snooze_minutes: formSnooze,
+      };
+
+      // save_config validates, persists to disk, and updates the in-memory config.
+      invoke<StateSnapshot>("save_config", { config })
+        .then(setRemState)
+        .catch((e: unknown) => setError(String(e)));
+    }, AUTOSAVE_DEBOUNCE_MS);
+
+    // Cancel on unmount.
+    return () => {
+      if (autosaveTimerRef.current !== null) clearTimeout(autosaveTimerRef.current);
+    };
+  // Re-run whenever any form field changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formInterval, formSnooze, isInfinite, formMaxCount]);
 
   // ---------------------------------------------------------------------------
   // Subscribe to backend events
@@ -172,7 +221,7 @@ function App() {
     }
   }, [buildConfig]);
 
-  /** Stop the reminder timer completely. */
+  /** Stop the reminder timer completely. Reminder count resets to zero. */
   const handleStop = useCallback(async () => {
     try {
       setError(null);
@@ -184,7 +233,7 @@ function App() {
     }
   }, []);
 
-  /** Toggle between Paused and Running. */
+  /** Toggle between Paused and Running. Pause preserves the current count. */
   const handlePauseResume = useCallback(async () => {
     try {
       setError(null);
@@ -286,7 +335,7 @@ function App() {
         <h2>Settings</h2>
         <p className="settings-hint">
           {canEdit
-            ? "Configure your reminder preferences below."
+            ? "Settings are saved automatically as you type."
             : "Stop the timer to change settings."}
         </p>
 
@@ -420,7 +469,7 @@ function App() {
             {isPaused ? "▶ Resume" : "⏸ Pause"}
           </button>
 
-          {/* Stop – disabled when already stopped */}
+          {/* Stop – disabled when already stopped; also resets the counter */}
           <button
             className="btn btn-stop"
             onClick={handleStop}

@@ -17,6 +17,9 @@
 // • Tauri events      – emitted from the timer thread back to the frontend:
 //                       `reminder-fired`     → payload: current reminder count
 //                       `reminder-completed` → payload: final reminder count
+// • Settings persistence – `tauri-plugin-store` writes the user's config to a
+//                       JSON file in the app's data directory so that settings
+//                       survive application restarts.
 
 use std::{
     sync::{Arc, Mutex},
@@ -25,12 +28,19 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_store::StoreExt;
 
 // ── Type alias ───────────────────────────────────────────────────────────────
 
 /// Convenience alias used throughout the module.
 pub type SharedState = Arc<Mutex<AppState>>;
+
+/// Name of the store file written to the app's data directory.
+const STORE_FILE: &str = "settings.json";
+
+/// Key under which the `ReminderConfig` is stored inside the JSON file.
+const STORE_KEY_CONFIG: &str = "config";
 
 // ── Data structures ──────────────────────────────────────────────────────────
 
@@ -70,6 +80,8 @@ pub struct AppState {
     pub status: ReminderStatus,
     pub config: ReminderConfig,
     /// How many reminders have been fired in the current session.
+    /// Resets to zero whenever the timer is stopped or the app is restarted.
+    /// Only a Pause preserves the count (so the session can be resumed).
     pub reminder_count: u32,
     /// Absolute instant at which the next reminder should fire.
     /// `None` when the timer is stopped or paused.
@@ -88,7 +100,10 @@ impl AppState {
     fn new() -> Self {
         Self {
             status: ReminderStatus::Stopped,
+            // Config starts with defaults; the setup hook overwrites this with
+            // any previously saved settings before the first command runs.
             config: ReminderConfig::default(),
+            // Count always starts at zero on a fresh launch.
             reminder_count: 0,
             next_fire_at: None,
             remaining_when_paused: None,
@@ -149,11 +164,68 @@ fn validate_config(config: &ReminderConfig) -> Result<(), String> {
     Ok(())
 }
 
+// ── Persistence helpers ───────────────────────────────────────────────────────
+
+/// Persist `config` to the on-disk store.
+///
+/// Errors are logged but not propagated so that a failed write never prevents
+/// the user from continuing to use the app.
+fn persist_config(app_handle: &AppHandle, config: &ReminderConfig) {
+    match app_handle.store(STORE_FILE) {
+        Ok(store) => {
+            match serde_json::to_value(config) {
+                Ok(value) => {
+                    store.set(STORE_KEY_CONFIG, value);
+                    if let Err(e) = store.save() {
+                        eprintln!("[water-reminder] Failed to save config: {e}");
+                    }
+                }
+                Err(e) => eprintln!("[water-reminder] Failed to serialise config: {e}"),
+            }
+        }
+        Err(e) => eprintln!("[water-reminder] Failed to open store: {e}"),
+    }
+}
+
+/// Try to load a previously saved `ReminderConfig` from the on-disk store.
+/// Returns `None` if no config has been saved yet or if it cannot be parsed.
+fn load_config(app_handle: &AppHandle) -> Option<ReminderConfig> {
+    let store = app_handle.store(STORE_FILE).ok()?;
+    let value = store.get(STORE_KEY_CONFIG)?;
+    serde_json::from_value::<ReminderConfig>(value).ok()
+}
+
 // ── Tauri commands ────────────────────────────────────────────────────────────
 //
 // Each command receives the shared state via Tauri's dependency-injection
 // system (`State<'_, SharedState>`).  Commands return `Result<StateSnapshot,
 // String>`; Tauri serialises both variants for the TypeScript caller.
+
+/// Save the user's settings to disk and update the in-memory config.
+///
+/// Called automatically from the front-end whenever a settings field is
+/// changed so that preferences persist across application restarts.
+#[tauri::command]
+fn save_config(
+    state: State<'_, SharedState>,
+    app_handle: AppHandle,
+    config: ReminderConfig,
+) -> Result<StateSnapshot, String> {
+    // Validate before touching any state or writing to disk.
+    validate_config(&config)?;
+
+    let mut s = state.lock().map_err(|e| e.to_string())?;
+    // Update the in-memory config so `get_status` reflects the latest settings
+    // even before the user presses Start.
+    s.config = config.clone();
+    let snap = snapshot(&s);
+    drop(s); // Release the lock before I/O.
+
+    // Write to disk (errors are logged, not propagated).
+    persist_config(&app_handle, &config);
+
+    Ok(snap)
+}
 
 /// Start the reminder timer with the given configuration.
 ///
@@ -177,8 +249,8 @@ fn start_reminders(
         return Err("Timer is paused. Resume or stop it first.".into());
     }
 
-    // Apply new configuration and reset the counter.
-    s.config = config;
+    // Apply new configuration and reset the counter for a fresh session.
+    s.config = config.clone();
     s.status = ReminderStatus::Running;
     s.reminder_count = 0;
     s.remaining_when_paused = None;
@@ -195,19 +267,27 @@ fn start_reminders(
     let snap = snapshot(&s);
     drop(s); // Release the lock before spawning the thread.
 
+    // Also persist the config that was just used to start a session.
+    persist_config(&app_handle, &config);
+
     spawn_timer_thread(Arc::clone(&*state), app_handle, my_gen);
 
     Ok(snap)
 }
 
-/// Stop the reminder timer.  The reminder count is preserved until `reset` is
-/// called, so the user can see how many reminders were sent.
+/// Stop the reminder timer.
+///
+/// The reminder count is reset to zero so the next session begins fresh.
+/// (Only a Pause preserves the count so the session can be resumed.)
 #[tauri::command]
 fn stop_reminders(state: State<'_, SharedState>) -> Result<StateSnapshot, String> {
     let mut s = state.lock().map_err(|e| e.to_string())?;
     s.status = ReminderStatus::Stopped;
     s.next_fire_at = None;
     s.remaining_when_paused = None;
+    // Reset the count: the requirement is that stopping resets the loop counter
+    // so the next Start begins from reminder #1.
+    s.reminder_count = 0;
     // Bump generation so the timer thread exits on its next iteration.
     s.thread_generation += 1;
     Ok(snapshot(&s))
@@ -215,6 +295,9 @@ fn stop_reminders(state: State<'_, SharedState>) -> Result<StateSnapshot, String
 
 /// Pause the timer.  The remaining time until the next reminder is saved so
 /// that `resume_reminders` can pick up exactly where it left off.
+///
+/// The reminder count is intentionally preserved on pause so that resuming
+/// continues the session from where it was interrupted.
 #[tauri::command]
 fn pause_reminders(state: State<'_, SharedState>) -> Result<StateSnapshot, String> {
     let mut s = state.lock().map_err(|e| e.to_string())?;
@@ -393,7 +476,9 @@ fn spawn_timer_thread(state: SharedState, app_handle: AppHandle, my_gen: u64) {
                     .unwrap_or(false);
 
                 if is_last {
-                    // Auto-stop the timer.
+                    // Auto-stop the timer.  The count is intentionally NOT reset
+                    // here so the user can see "X/X reminders completed" in the
+                    // UI.  Pressing Stop or Start will reset it.
                     s.status = ReminderStatus::Stopped;
                     s.next_fire_at = None;
                 } else {
@@ -445,16 +530,34 @@ fn send_notification(app_handle: &AppHandle) {
 
 // ── Application entry point ───────────────────────────────────────────────────
 
-/// Called from `main.rs`.  Builds the Tauri application, registers the
-/// notification plugin and all commands, then runs the event loop.
+/// Called from `main.rs`.  Builds the Tauri application, registers plugins
+/// and commands, loads any previously saved settings, then runs the event loop.
 pub fn run() {
     tauri::Builder::default()
         // Register the desktop notification plugin.
         .plugin(tauri_plugin_notification::init())
+        // Register the store plugin for persistent settings.
+        .plugin(tauri_plugin_store::Builder::default().build())
         // Inject shared state so every command can access it.
         .manage(Arc::new(Mutex::new(AppState::new())) as SharedState)
+        // Setup hook: runs once after the app is initialised but before any
+        // window is shown.  We use it to load the persisted config so that
+        // `get_status` returns the correct settings from the very first call.
+        .setup(|app| {
+            if let Some(saved_config) = load_config(app.handle()) {
+                // Validate the stored config before applying it; if it is
+                // somehow corrupt we simply keep the built-in defaults.
+                if validate_config(&saved_config).is_ok() {
+                    if let Ok(mut s) = app.state::<SharedState>().lock() {
+                        s.config = saved_config;
+                    }
+                }
+            }
+            Ok(())
+        })
         // Register all IPC commands exposed to the frontend.
         .invoke_handler(tauri::generate_handler![
+            save_config,
             start_reminders,
             stop_reminders,
             pause_reminders,
