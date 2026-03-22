@@ -14,10 +14,18 @@ interface ReminderConfig {
   max_count: number | null;
   /** How long to delay the reminder when snoozed, in minutes. */
   snooze_minutes: number;
+  /** When true, the timer waits for the user to acknowledge before starting the next interval. */
+  require_acknowledgment: boolean;
+  /** When true, an alert sound is played when a reminder fires. */
+  play_sound: boolean;
+  /** When true, the window is brought to the front when a reminder fires. */
+  focus_window: boolean;
+  /** When true, the taskbar / dock icon flashes when a reminder fires. */
+  flash_taskbar: boolean;
 }
 
 /** Possible states of the reminder timer. */
-type ReminderStatus = "Stopped" | "Running" | "Paused";
+type ReminderStatus = "Stopped" | "Running" | "Paused" | "WaitingAck";
 
 /** Full state snapshot returned by backend commands. */
 interface StateSnapshot {
@@ -26,6 +34,41 @@ interface StateSnapshot {
   reminder_count: number;
   /** Seconds until the next reminder fires. null when not running. */
   seconds_until_next: number | null;
+}
+
+// ---------------------------------------------------------------------------
+// Alert sound
+// ---------------------------------------------------------------------------
+
+/**
+ * Play a short water-drop-style alert tone using the Web Audio API.
+ * Errors are silently ignored (e.g. when audio context is not available).
+ */
+function playAlertSound(): void {
+  try {
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.type = "sine";
+    // Rising tone: 440 Hz → 880 Hz over 120 ms, then fade out
+    osc.frequency.setValueAtTime(440, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.12);
+
+    gain.gain.setValueAtTime(0, ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.5, ctx.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.65);
+    osc.onended = () => void ctx.close();
+  } catch (e) {
+    // Web Audio not available – ignore silently.
+    console.error("[water-reminder] Failed to play alert sound:", e);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -45,6 +88,10 @@ const DEFAULT_CONFIG: ReminderConfig = {
   interval_minutes: 60,
   max_count: null,
   snooze_minutes: 5,
+  require_acknowledgment: true,
+  play_sound: true,
+  focus_window: true,
+  flash_taskbar: true,
 };
 
 /** Default state when the app first loads. */
@@ -71,6 +118,10 @@ function App() {
   const [formSnooze, setFormSnooze] = useState(DEFAULT_CONFIG.snooze_minutes);
   const [isInfinite, setIsInfinite] = useState(true);
   const [formMaxCount, setFormMaxCount] = useState(10);
+  const [formRequireAck, setFormRequireAck] = useState(DEFAULT_CONFIG.require_acknowledgment);
+  const [formPlaySound, setFormPlaySound] = useState(DEFAULT_CONFIG.play_sound);
+  const [formFocusWindow, setFormFocusWindow] = useState(DEFAULT_CONFIG.focus_window);
+  const [formFlashTaskbar, setFormFlashTaskbar] = useState(DEFAULT_CONFIG.flash_taskbar);
 
   // Whether to show the snooze button prominently (set true after a reminder fires).
   const [showSnoozeBanner, setShowSnoozeBanner] = useState(false);
@@ -88,6 +139,14 @@ function App() {
   // since the initial values come from the backend (not from user input).
   const isInitialLoadRef = useRef(true);
 
+  // Ref that always mirrors the current formPlaySound value so the event
+  // listener (which only mounts once) can read the latest setting without
+  // becoming stale.
+  const playSoundRef = useRef(DEFAULT_CONFIG.play_sound);
+  useEffect(() => {
+    playSoundRef.current = formPlaySound;
+  }, [formPlaySound]);
+
   // ---------------------------------------------------------------------------
   // Load initial state from the backend on first render.
   // The backend's setup hook restores the last-saved config, so get_status
@@ -102,6 +161,10 @@ function App() {
         setFormSnooze(snapshot.config.snooze_minutes);
         setIsInfinite(snapshot.config.max_count === null);
         setFormMaxCount(snapshot.config.max_count ?? 10);
+        setFormRequireAck(snapshot.config.require_acknowledgment);
+        setFormPlaySound(snapshot.config.play_sound);
+        setFormFocusWindow(snapshot.config.focus_window);
+        setFormFlashTaskbar(snapshot.config.flash_taskbar);
         // Mark the initial load as done so subsequent changes auto-save.
         isInitialLoadRef.current = false;
       })
@@ -127,6 +190,10 @@ function App() {
         interval_minutes: formInterval,
         max_count: isInfinite ? null : formMaxCount,
         snooze_minutes: formSnooze,
+        require_acknowledgment: formRequireAck,
+        play_sound: formPlaySound,
+        focus_window: formFocusWindow,
+        flash_taskbar: formFlashTaskbar,
       };
 
       // save_config validates, persists to disk, and updates the in-memory config.
@@ -141,7 +208,7 @@ function App() {
     };
   // Re-run whenever any form field changes.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formInterval, formSnooze, isInfinite, formMaxCount]);
+  }, [formInterval, formSnooze, isInfinite, formMaxCount, formRequireAck, formPlaySound, formFocusWindow, formFlashTaskbar]);
 
   // ---------------------------------------------------------------------------
   // Subscribe to backend events
@@ -151,7 +218,10 @@ function App() {
 
     // Fired each time a reminder notification is sent.
     listen<number>("reminder-fired", (_e) => {
-      // Refresh full state so the count and countdown are accurate.
+      // Play the alert sound if the setting is enabled.
+      if (playSoundRef.current) playAlertSound();
+
+      // Refresh full state so the count and status are accurate.
       invoke<StateSnapshot>("get_status")
         .then(setRemState)
         .catch((e: unknown) => setError(String(e)));
@@ -183,7 +253,8 @@ function App() {
 
   // ---------------------------------------------------------------------------
   // Poll the backend every second while the timer is Running to keep the
-  // countdown display in sync.
+  // countdown display in sync.  No polling needed for WaitingAck since there
+  // is no countdown – all state transitions there are user-initiated.
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (remState.status !== "Running") return;
@@ -206,7 +277,11 @@ function App() {
     interval_minutes: formInterval,
     max_count: isInfinite ? null : formMaxCount,
     snooze_minutes: formSnooze,
-  }), [formInterval, isInfinite, formMaxCount, formSnooze]);
+    require_acknowledgment: formRequireAck,
+    play_sound: formPlaySound,
+    focus_window: formFocusWindow,
+    flash_taskbar: formFlashTaskbar,
+  }), [formInterval, isInfinite, formMaxCount, formSnooze, formRequireAck, formPlaySound, formFocusWindow, formFlashTaskbar]);
 
   /** Start the reminder timer with the current settings. */
   const handleStart = useCallback(async () => {
@@ -270,19 +345,31 @@ function App() {
     }
   }, []);
 
+  /** Acknowledge the reminder and start the next full interval. */
+  const handleAcknowledge = useCallback(async () => {
+    try {
+      setError(null);
+      const snapshot = await invoke<StateSnapshot>("acknowledge_reminder");
+      setRemState(snapshot);
+      setShowSnoozeBanner(false);
+    } catch (e) {
+      setError(String(e));
+    }
+  }, []);
+
   // ---------------------------------------------------------------------------
   // Derived state flags used to drive the UI
   // ---------------------------------------------------------------------------
   const isRunning = remState.status === "Running";
   const isPaused = remState.status === "Paused";
   const isStopped = remState.status === "Stopped";
+  const isWaitingAck = remState.status === "WaitingAck";
 
   // Settings are only editable when the timer is fully stopped.
   const canEdit = isStopped;
 
-  // Show the snooze button whenever the timer is active (running/paused) or
-  // the snooze banner is triggered by a recent notification.
-  const showSnooze = !isStopped && (showSnoozeBanner || isRunning || isPaused);
+  // Show the snooze button when the timer is active or a reminder just fired.
+  const showSnooze = !isStopped && (showSnoozeBanner || isRunning || isPaused || isWaitingAck);
 
   // ---------------------------------------------------------------------------
   // Render
@@ -298,7 +385,7 @@ function App() {
 
       {/* ── Status card ── */}
       <section className="card status-card" aria-label="Current status">
-        {/* Running / Paused / Stopped badge */}
+        {/* Running / Paused / WaitingAck / Stopped badge */}
         <div
           className={`status-badge status-${remState.status.toLowerCase()}`}
           role="status"
@@ -307,6 +394,7 @@ function App() {
           {isRunning && "🟢 Running"}
           {isPaused && "⏸ Paused"}
           {isStopped && "⏹ Stopped"}
+          {isWaitingAck && "⏰ Reminder!"}
         </div>
 
         {/* Countdown – only meaningful while Running or Paused */}
@@ -329,6 +417,33 @@ function App() {
           </span>
         </div>
       </section>
+
+      {/* ── Acknowledgment card – shown when waiting for user to confirm ── */}
+      {isWaitingAck && (
+        <section className="card ack-card" aria-live="assertive" aria-label="Reminder acknowledgment">
+          <div className="ack-icon" aria-hidden="true">💧</div>
+          <h2 className="ack-title">Time to Drink Water!</h2>
+          <p className="ack-subtitle">
+            Take a moment to hydrate before your next reminder starts.
+          </p>
+          <div className="ack-buttons">
+            <button
+              className="btn btn-acknowledge"
+              onClick={handleAcknowledge}
+              aria-label="Acknowledge – I drank water, start the next reminder interval"
+            >
+              ✓ I Drank Water!
+            </button>
+            <button
+              className="btn btn-snooze"
+              onClick={handleSnooze}
+              aria-label={`Snooze reminder for ${remState.config.snooze_minutes} minutes`}
+            >
+              💤 Snooze ({remState.config.snooze_minutes} min)
+            </button>
+          </div>
+        </section>
+      )}
 
       {/* ── Settings card ── */}
       <section className="card settings-card" aria-label="Reminder settings">
@@ -429,6 +544,47 @@ function App() {
             How long to delay the reminder when you snooze it (1–60 min).
           </span>
         </div>
+
+        {/* Notification behaviour toggles */}
+        <div className="form-group">
+          <fieldset disabled={!canEdit}>
+            <legend>Notification Behavior</legend>
+            <div className="toggle-group">
+              <label className="toggle-label">
+                <input
+                  type="checkbox"
+                  checked={formRequireAck}
+                  onChange={(e) => setFormRequireAck(e.target.checked)}
+                />
+                <span>Require acknowledgment before next reminder</span>
+              </label>
+              <label className="toggle-label">
+                <input
+                  type="checkbox"
+                  checked={formPlaySound}
+                  onChange={(e) => setFormPlaySound(e.target.checked)}
+                />
+                <span>Play alert sound</span>
+              </label>
+              <label className="toggle-label">
+                <input
+                  type="checkbox"
+                  checked={formFocusWindow}
+                  onChange={(e) => setFormFocusWindow(e.target.checked)}
+                />
+                <span>Bring window to front</span>
+              </label>
+              <label className="toggle-label">
+                <input
+                  type="checkbox"
+                  checked={formFlashTaskbar}
+                  onChange={(e) => setFormFlashTaskbar(e.target.checked)}
+                />
+                <span>Flash taskbar / dock icon</span>
+              </label>
+            </div>
+          </fieldset>
+        </div>
       </section>
 
       {/* ── Controls card ── */}
@@ -453,7 +609,7 @@ function App() {
           <button
             className="btn btn-start"
             onClick={handleStart}
-            disabled={isRunning || isPaused}
+            disabled={isRunning || isPaused || isWaitingAck}
             aria-label="Start reminders"
           >
             ▶ Start
@@ -463,7 +619,7 @@ function App() {
           <button
             className="btn btn-pause"
             onClick={handlePauseResume}
-            disabled={isStopped}
+            disabled={isStopped || isWaitingAck}
             aria-label={isPaused ? "Resume reminders" : "Pause reminders"}
           >
             {isPaused ? "▶ Resume" : "⏸ Pause"}
@@ -489,8 +645,8 @@ function App() {
           </button>
         </div>
 
-        {/* Snooze button – shown when timer is active */}
-        {showSnooze && (
+        {/* Snooze button – shown when timer is active (but not WaitingAck, which has its own card) */}
+        {showSnooze && !isWaitingAck && (
           <button
             className="btn btn-snooze"
             onClick={handleSnooze}

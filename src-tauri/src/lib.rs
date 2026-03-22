@@ -50,6 +50,10 @@ pub enum ReminderStatus {
     Stopped,
     Running,
     Paused,
+    /// A reminder has fired and the app is waiting for the user to acknowledge
+    /// it before the next interval begins.  Only used when
+    /// `ReminderConfig::require_acknowledgment` is `true`.
+    WaitingAck,
 }
 
 /// User-configurable parameters for the reminder timer.
@@ -63,6 +67,22 @@ pub struct ReminderConfig {
     /// How long to delay the next reminder when the user clicks "Snooze",
     /// in minutes.
     pub snooze_minutes: u32,
+    /// When `true`, the timer pauses after each reminder fires and waits for
+    /// the user to acknowledge before scheduling the next interval.
+    #[serde(default = "serde_default_true")]
+    pub require_acknowledgment: bool,
+    /// When `true`, an alert sound is played in the frontend when a reminder
+    /// fires.
+    #[serde(default = "serde_default_true")]
+    pub play_sound: bool,
+    /// When `true`, the application window is brought to the foreground
+    /// whenever a reminder fires.
+    #[serde(default = "serde_default_true")]
+    pub focus_window: bool,
+    /// When `true`, the taskbar / dock icon flashes to signal a pending
+    /// reminder.
+    #[serde(default = "serde_default_true")]
+    pub flash_taskbar: bool,
 }
 
 impl Default for ReminderConfig {
@@ -71,8 +91,18 @@ impl Default for ReminderConfig {
             interval_minutes: 60,
             max_count: None,
             snooze_minutes: 5,
+            require_acknowledgment: true,
+            play_sound: true,
+            focus_window: true,
+            flash_taskbar: true,
         }
     }
+}
+
+/// Used as the serde `default` function for `bool` fields that should default
+/// to `true`.  (`serde(default)` alone would give `false` for booleans.)
+fn serde_default_true() -> bool {
+    true
 }
 
 /// All mutable runtime state, stored behind a `Mutex`.
@@ -280,7 +310,10 @@ fn start_reminders(
 /// The reminder count is reset to zero so the next session begins fresh.
 /// (Only a Pause preserves the count so the session can be resumed.)
 #[tauri::command]
-fn stop_reminders(state: State<'_, SharedState>) -> Result<StateSnapshot, String> {
+fn stop_reminders(
+    state: State<'_, SharedState>,
+    app_handle: AppHandle,
+) -> Result<StateSnapshot, String> {
     let mut s = state.lock().map_err(|e| e.to_string())?;
     s.status = ReminderStatus::Stopped;
     s.next_fire_at = None;
@@ -290,7 +323,11 @@ fn stop_reminders(state: State<'_, SharedState>) -> Result<StateSnapshot, String
     s.reminder_count = 0;
     // Bump generation so the timer thread exits on its next iteration.
     s.thread_generation += 1;
-    Ok(snapshot(&s))
+    let snap = snapshot(&s);
+    drop(s);
+    // Clear any pending taskbar-flash / user-attention request.
+    stop_window_attention(&app_handle);
+    Ok(snap)
 }
 
 /// Pause the timer.  The remaining time until the next reminder is saved so
@@ -354,7 +391,10 @@ fn resume_reminders(
 
 /// Reset the reminder count to zero and stop the timer.
 #[tauri::command]
-fn reset_reminders(state: State<'_, SharedState>) -> Result<StateSnapshot, String> {
+fn reset_reminders(
+    state: State<'_, SharedState>,
+    app_handle: AppHandle,
+) -> Result<StateSnapshot, String> {
     let mut s = state.lock().map_err(|e| e.to_string())?;
     s.status = ReminderStatus::Stopped;
     s.reminder_count = 0;
@@ -362,13 +402,18 @@ fn reset_reminders(state: State<'_, SharedState>) -> Result<StateSnapshot, Strin
     s.remaining_when_paused = None;
     // Bump generation so the timer thread exits.
     s.thread_generation += 1;
-    Ok(snapshot(&s))
+    let snap = snapshot(&s);
+    drop(s);
+    // Clear any pending taskbar-flash / user-attention request.
+    stop_window_attention(&app_handle);
+    Ok(snap)
 }
 
 /// Delay the next reminder by `snooze_minutes` from now.
 ///
-/// Works whether the timer is Running or Paused; if it was Paused, it is
-/// automatically resumed.
+/// Works whether the timer is Running, Paused, or WaitingAck.  The current
+/// timer thread (if any) is always replaced with a fresh one so that it picks
+/// up the updated fire time correctly.
 #[tauri::command]
 fn snooze_reminder(
     state: State<'_, SharedState>,
@@ -383,22 +428,21 @@ fn snooze_reminder(
     let snooze_duration = Duration::from_secs(s.config.snooze_minutes as u64 * 60);
     s.next_fire_at = Some(Instant::now() + snooze_duration);
     s.remaining_when_paused = None;
-
-    let was_paused = s.status == ReminderStatus::Paused;
     s.status = ReminderStatus::Running;
 
-    // Bump generation and re-spawn the thread if it was paused (so the thread
-    // is alive and checking for the new fire time).
+    // Always bump the generation so that any currently-running thread (whether
+    // it was in Running, Paused, or WaitingAck) exits cleanly, then spawn a
+    // fresh thread that will observe the new fire time.
     s.thread_generation += 1;
     let my_gen = s.thread_generation;
 
     let snap = snapshot(&s);
     drop(s);
 
-    if was_paused {
-        // The old thread exited when we paused; start a new one.
-        spawn_timer_thread(Arc::clone(&*state), app_handle, my_gen);
-    }
+    // Clear any pending taskbar-flash / user-attention request.
+    stop_window_attention(&app_handle);
+
+    spawn_timer_thread(Arc::clone(&*state), app_handle, my_gen);
 
     Ok(snap)
 }
@@ -411,6 +455,40 @@ fn get_status(state: State<'_, SharedState>) -> Result<StateSnapshot, String> {
     Ok(snapshot(&s))
 }
 
+/// Acknowledge the current reminder and start the next full interval.
+///
+/// Only valid when status is `WaitingAck`.  The existing timer thread (which
+/// has been looping idle since the reminder fired) picks up the new fire time
+/// without needing to be replaced – so the generation counter is intentionally
+/// **not** bumped here.
+#[tauri::command]
+fn acknowledge_reminder(
+    state: State<'_, SharedState>,
+    app_handle: AppHandle,
+) -> Result<StateSnapshot, String> {
+    let mut s = state.lock().map_err(|e| e.to_string())?;
+
+    if s.status != ReminderStatus::WaitingAck {
+        return Err("No reminder is currently waiting for acknowledgment.".into());
+    }
+
+    // Schedule the next full interval and transition back to Running.
+    // The timer thread is still looping with the current generation; it will
+    // detect the Running status and new fire time on its next iteration.
+    s.next_fire_at = Some(
+        Instant::now() + Duration::from_secs(s.config.interval_minutes as u64 * 60),
+    );
+    s.status = ReminderStatus::Running;
+
+    let snap = snapshot(&s);
+    drop(s);
+
+    // Clear any pending taskbar-flash / user-attention request.
+    stop_window_attention(&app_handle);
+
+    Ok(snap)
+}
+
 // ── Timer thread ──────────────────────────────────────────────────────────────
 
 /// Spawn a background thread that drives the reminder schedule.
@@ -419,14 +497,16 @@ fn get_status(state: State<'_, SharedState>) -> Result<StateSnapshot, String> {
 /// 1. Compares its `my_gen` against `state.thread_generation`; if they
 ///    differ the thread exits silently (a newer session has taken over).
 /// 2. If the status is `Stopped`, exits.
-/// 3. If the status is `Paused`, sleeps and retries.
+/// 3. If the status is `Paused` or `WaitingAck`, sleeps and retries.
 /// 4. If the status is `Running` and the fire time has passed:
 ///    a. Sends a desktop notification.
 ///    b. Increments the reminder count.
-///    c. Emits the `reminder-fired` event to the frontend.
-///    d. If `max_count` is reached, sets status to `Stopped` and emits
+///    c. Optionally brings the window to the front / flashes the taskbar.
+///    d. Emits the `reminder-fired` event to the frontend.
+///    e. If `max_count` is reached, sets status to `Stopped` and emits
 ///       `reminder-completed`.
-///    e. Otherwise schedules the next fire time.
+///    f. If `require_acknowledgment` is set, transitions to `WaitingAck`.
+///    g. Otherwise schedules the next fire time immediately.
 fn spawn_timer_thread(state: SharedState, app_handle: AppHandle, my_gen: u64) {
     thread::spawn(move || {
         loop {
@@ -434,7 +514,8 @@ fn spawn_timer_thread(state: SharedState, app_handle: AppHandle, my_gen: u64) {
             thread::sleep(Duration::from_millis(100));
 
             // ── Determine what to do next (hold the lock briefly) ─────────
-            let fire_info: Option<(u32, bool)>; // (new_count, is_last)
+            // (new_count, is_last, focus_window, flash_taskbar)
+            let fire_info: Option<(u32, bool, bool, bool)>;
 
             {
                 let mut s = match state.lock() {
@@ -450,53 +531,79 @@ fn spawn_timer_thread(state: SharedState, app_handle: AppHandle, my_gen: u64) {
 
                 match s.status {
                     ReminderStatus::Stopped => break, // Timer was stopped; exit cleanly.
-                    ReminderStatus::Paused => continue, // Wait until resumed.
-                    ReminderStatus::Running => {}
+                    // Both Paused and WaitingAck idle here – a different command
+                    // will transition the status back to Running when appropriate.
+                    ReminderStatus::Paused | ReminderStatus::WaitingAck => {
+                        fire_info = None;
+                    }
+                    ReminderStatus::Running => {
+                        // Check whether the fire time has arrived.
+                        let should_fire = s
+                            .next_fire_at
+                            .map(|t| Instant::now() >= t)
+                            .unwrap_or(false);
+
+                        if !should_fire {
+                            fire_info = None;
+                        } else {
+                            // ── It's time to fire! ─────────────────────────────────
+                            s.reminder_count += 1;
+                            let new_count = s.reminder_count;
+
+                            // Check if this is the final reminder in a limited session.
+                            let is_last = s
+                                .config
+                                .max_count
+                                .map(|max| new_count >= max)
+                                .unwrap_or(false);
+
+                            if is_last {
+                                // Auto-stop the timer.  The count is intentionally NOT
+                                // reset here so the user can see "X/X reminders
+                                // completed" in the UI.
+                                s.status = ReminderStatus::Stopped;
+                                s.next_fire_at = None;
+                            } else if s.config.require_acknowledgment {
+                                // Wait for the user to confirm they drank water before
+                                // the next interval begins.
+                                s.status = ReminderStatus::WaitingAck;
+                                s.next_fire_at = None;
+                            } else {
+                                // Schedule the next reminder immediately.
+                                s.next_fire_at = Some(
+                                    Instant::now()
+                                        + Duration::from_secs(
+                                            s.config.interval_minutes as u64 * 60,
+                                        ),
+                                );
+                            }
+
+                            fire_info = Some((
+                                new_count,
+                                is_last,
+                                s.config.focus_window,
+                                s.config.flash_taskbar,
+                            ));
+                        }
+                    }
                 }
-
-                // Check whether the fire time has arrived.
-                let should_fire = s
-                    .next_fire_at
-                    .map(|t| Instant::now() >= t)
-                    .unwrap_or(false);
-
-                if !should_fire {
-                    continue;
-                }
-
-                // ── It's time to fire! ─────────────────────────────────────
-                s.reminder_count += 1;
-                let new_count = s.reminder_count;
-
-                // Check if this is the final reminder in a limited session.
-                let is_last = s
-                    .config
-                    .max_count
-                    .map(|max| new_count >= max)
-                    .unwrap_or(false);
-
-                if is_last {
-                    // Auto-stop the timer.  The count is intentionally NOT reset
-                    // here so the user can see "X/X reminders completed" in the
-                    // UI.  Pressing Stop or Start will reset it.
-                    s.status = ReminderStatus::Stopped;
-                    s.next_fire_at = None;
-                } else {
-                    // Schedule the next reminder.
-                    s.next_fire_at = Some(
-                        Instant::now()
-                            + Duration::from_secs(s.config.interval_minutes as u64 * 60),
-                    );
-                }
-
-                fire_info = Some((new_count, is_last));
                 // Lock is released here (end of the block).
             }
 
             // ── Send notification & emit events (lock NOT held) ───────────
-            if let Some((count, is_last)) = fire_info {
+            if let Some((count, is_last, focus_window, flash_taskbar)) = fire_info {
                 // Send desktop notification.
                 send_notification(&app_handle);
+
+                // Optionally bring the window to the front.
+                if focus_window {
+                    bring_window_to_front(&app_handle);
+                }
+
+                // Optionally flash the taskbar / dock icon.
+                if flash_taskbar {
+                    flash_window_taskbar(&app_handle);
+                }
 
                 // Notify the frontend that a reminder fired.
                 let _ = app_handle.emit("reminder-fired", count);
@@ -525,6 +632,33 @@ fn send_notification(app_handle: &AppHandle) {
         .show()
     {
         eprintln!("[water-reminder] Failed to send notification: {e}");
+    }
+}
+
+/// Unminimize, show, and focus the main application window so it comes to the
+/// front of all other windows.  Errors are logged but not propagated.
+fn bring_window_to_front(app_handle: &AppHandle) {
+    if let Some(win) = app_handle.get_webview_window("main") {
+        let _ = win.unminimize();
+        let _ = win.show();
+        let _ = win.set_focus();
+    }
+}
+
+/// Ask the OS to flash / bounce the taskbar or dock icon to attract the user's
+/// attention.  Errors are logged but not propagated.
+fn flash_window_taskbar(app_handle: &AppHandle) {
+    use tauri::window::UserAttentionType;
+    if let Some(win) = app_handle.get_webview_window("main") {
+        let _ = win.request_user_attention(Some(UserAttentionType::Critical));
+    }
+}
+
+/// Stop any pending taskbar flash / dock-bounce that was started by a
+/// previous call to `flash_window_taskbar`.
+fn stop_window_attention(app_handle: &AppHandle) {
+    if let Some(win) = app_handle.get_webview_window("main") {
+        let _ = win.request_user_attention(None);
     }
 }
 
@@ -564,6 +698,7 @@ pub fn run() {
             resume_reminders,
             reset_reminders,
             snooze_reminder,
+            acknowledge_reminder,
             get_status,
         ])
         .run(tauri::generate_context!())
