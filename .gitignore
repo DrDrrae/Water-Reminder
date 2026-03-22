@@ -1,0 +1,35 @@
+# Node.js dependencies
+node_modules/
+
+# Production build output
+dist/
+
+# Rust/Cargo build artifacts
+src-tauri/target/
+
+# Tauri generated files (auto-generated during build, not for source control)
+src-tauri/gen/
+
+# Tauri Windows installer tool cache
+src-tauri/WixTools/
+
+# Environment files (may contain secrets)
+.env
+.env.local
+.env.*.local
+
+# Editor-specific files
+.vscode/!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+
+# Debug/log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
