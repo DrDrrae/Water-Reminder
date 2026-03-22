@@ -91,7 +91,7 @@ Settings are stored in `settings.json` in the platform app data directory:
 ## Icon license
 
 - App icon: Bootstrap Icons `droplet-fill`
-- Source: https://icons.getbootstrap.com/icons/droplet-fill/
+- Source: <https://icons.getbootstrap.com/icons/droplet-fill/>
 - License: MIT (free for personal and commercial use)
 - This project generates platform icon files from `src-tauri/icons/bootstrap-droplet.svg`
 
