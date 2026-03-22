@@ -24,6 +24,9 @@ tauri-runtime = "2.10.1"
 # Desktop notification plugin
 tauri-plugin-notification = "2"
 
+# Native system dialogs
+tauri-plugin-dialog = "2"
+
 # Persistent key-value store – used to save user settings between sessions
 tauri-plugin-store = "2"
 

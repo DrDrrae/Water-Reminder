@@ -732,6 +732,8 @@ fn stop_window_attention(app_handle: &AppHandle) {
 /// and commands, loads any previously saved settings, then runs the event loop.
 pub fn run() {
     tauri::Builder::default()
+        // Register the native dialog plugin.
+        .plugin(tauri_plugin_dialog::init())
         // Register the desktop notification plugin.
         .plugin(tauri_plugin_notification::init())
         // Register the store plugin for persistent settings.

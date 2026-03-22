@@ -152,5 +152,6 @@ The packaged installer is written to `src-tauri/target/release/bundle/`.
 - **Windows** – taskbar flash uses the `Critical` attention type, which flashes both the window frame and the taskbar button until the app is focused. If **Focus window** is enabled, the app is also raised above other windows without taking keyboard focus.
 - **macOS** – dock bounce uses the `Critical` attention type (continuous bounce until focused); bundle identifier is `com.waterreminder.desktop`.
 - **Linux** – taskbar flash behaviour depends on the window manager (GNOME, KDE, i3, etc.) and is not guaranteed.
+- **Closing the app** – if the timer is `Stopped`, closing the window exits immediately. If a reminder session is active (`Running`, `Paused`, or `WaitingAck`), the app asks for confirmation before closing.
 - **Audio** – the alert tone uses the Web Audio API inside the WebView. It may be silenced by OS-level mute or by WebView autoplay restrictions in unusual configurations.
 - **Notifications** – delivered through the OS-native notification system on each platform (Windows Notification Center, macOS Notification Center, freedesktop D-Bus on Linux). The reminder still fires and the window still flashes even if notifications are blocked at the OS level.

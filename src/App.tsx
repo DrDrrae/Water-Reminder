@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { confirm } from "@tauri-apps/plugin-dialog";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 // ---------------------------------------------------------------------------
 // Type definitions that mirror the Rust backend structs
@@ -148,6 +150,15 @@ function App() {
   // Ref to store the repeating sound timer while waiting for acknowledgment.
   const repeatSoundTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Tracks the latest reminder status for the close-request handler.
+  const reminderStatusRef = useRef<ReminderStatus>(DEFAULT_STATE.status);
+
+  // Prevents multiple overlapping exit confirmation prompts.
+  const closePromptOpenRef = useRef(false);
+
+  // Avoids issuing multiple destroy() calls if the user clicks close repeatedly.
+  const closeInProgressRef = useRef(false);
+
   // Flag that tells the auto-save effect to skip the very first render,
   // since the initial values come from the backend (not from user input).
   const isInitialLoadRef = useRef(true);
@@ -159,6 +170,10 @@ function App() {
   useEffect(() => {
     playSoundRef.current = formPlaySound;
   }, [formPlaySound]);
+
+  useEffect(() => {
+    reminderStatusRef.current = remState.status;
+  }, [remState.status]);
 
   // ---------------------------------------------------------------------------
   // Load initial state from the backend on first render.
@@ -270,37 +285,105 @@ function App() {
   // ---------------------------------------------------------------------------
   useEffect(() => {
     const unlisteners: UnlistenFn[] = [];
+    const appWindow = getCurrentWindow();
+    let disposed = false;
 
-    // Fired each time a reminder notification is sent.
-    listen<number>("reminder-fired", (_e) => {
-      // Play the alert sound if the setting is enabled.
-      if (playSoundRef.current) playAlertSound();
+    const registerListeners = async () => {
+      try {
+        const reminderFiredUnlisten = await listen<number>("reminder-fired", (_e) => {
+          if (playSoundRef.current) playAlertSound();
 
-      // Refresh full state so the count and status are accurate.
-      invoke<StateSnapshot>("get_status")
-        .then(setRemState)
-        .catch((e: unknown) => setError(String(e)));
+          invoke<StateSnapshot>("get_status")
+            .then(setRemState)
+            .catch((e: unknown) => setError(String(e)));
 
-      // Show the snooze banner and auto-hide it after 30 seconds.
-      setShowSnoozeBanner(true);
-      if (snoozeTimerRef.current !== null) clearTimeout(snoozeTimerRef.current);
-      snoozeTimerRef.current = setTimeout(() => setShowSnoozeBanner(false), 30_000);
-    })
-      .then((fn) => unlisteners.push(fn))
-      .catch(console.error);
+          setShowSnoozeBanner(true);
+          if (snoozeTimerRef.current !== null) clearTimeout(snoozeTimerRef.current);
+          snoozeTimerRef.current = setTimeout(() => setShowSnoozeBanner(false), 30_000);
+        });
 
-    // Fired when the reminder has reached its maximum count and auto-stopped.
-    listen<number>("reminder-completed", (_e) => {
-      invoke<StateSnapshot>("get_status")
-        .then(setRemState)
-        .catch((e: unknown) => setError(String(e)));
-      setShowSnoozeBanner(false);
-    })
-      .then((fn) => unlisteners.push(fn))
-      .catch(console.error);
+        if (disposed) {
+          reminderFiredUnlisten();
+          return;
+        }
+        unlisteners.push(reminderFiredUnlisten);
+
+        const reminderCompletedUnlisten = await listen<number>("reminder-completed", (_e) => {
+          invoke<StateSnapshot>("get_status")
+            .then(setRemState)
+            .catch((e: unknown) => setError(String(e)));
+          setShowSnoozeBanner(false);
+        });
+
+        if (disposed) {
+          reminderCompletedUnlisten();
+          return;
+        }
+        unlisteners.push(reminderCompletedUnlisten);
+
+        const closeUnlisten = await appWindow.onCloseRequested(async (event) => {
+          event.preventDefault();
+
+          if (closeInProgressRef.current || closePromptOpenRef.current) return;
+
+          const status = reminderStatusRef.current;
+          const hasActiveReminderSession =
+            status === "Running" || status === "Paused" || status === "WaitingAck";
+
+          if (!hasActiveReminderSession) {
+            try {
+              closeInProgressRef.current = true;
+              await appWindow.destroy();
+            } catch (e) {
+              closeInProgressRef.current = false;
+              setError(`Failed to close window: ${String(e)}`);
+            }
+            return;
+          }
+
+          let confirmed = false;
+          closePromptOpenRef.current = true;
+          try {
+            confirmed = await confirm(
+              "A reminder session is still active. Are you sure you want to close Water Reminder?",
+              {
+                title: "Close Water Reminder?",
+                kind: "warning",
+              },
+            );
+          } catch (e) {
+            setError(`Failed to show close confirmation: ${String(e)}`);
+            return;
+          } finally {
+            closePromptOpenRef.current = false;
+          }
+
+          if (!confirmed) return;
+
+          try {
+            closeInProgressRef.current = true;
+            await appWindow.destroy();
+          } catch (e) {
+            closeInProgressRef.current = false;
+            setError(`Failed to close window: ${String(e)}`);
+          }
+        });
+
+        if (disposed) {
+          closeUnlisten();
+          return;
+        }
+        unlisteners.push(closeUnlisten);
+      } catch (e) {
+        console.error("[water-reminder] Failed to register app window listeners:", e);
+      }
+    };
+
+    void registerListeners();
 
     // Clean up listeners when the component unmounts.
     return () => {
+      disposed = true;
       unlisteners.forEach((fn) => fn());
       if (snoozeTimerRef.current !== null) clearTimeout(snoozeTimerRef.current);
       if (repeatSoundTimerRef.current !== null) clearInterval(repeatSoundTimerRef.current);
