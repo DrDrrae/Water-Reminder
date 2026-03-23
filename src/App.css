@@ -562,3 +562,44 @@ fieldset:disabled .toggle-label {
 fieldset:disabled .toggle-label input {
   cursor: not-allowed;
 }
+
+/* ============================================================
+   UI flash on reminder – saturation + brightness pulse
+   When a reminder fires the entire app desaturates and darkens
+   to draw attention without making the screen unreadable.
+   ============================================================ */
+@keyframes flash-saturation {
+  0%, 100% { filter: saturate(1) brightness(1); }
+  50%      { filter: saturate(0.2) brightness(0.82); }
+}
+
+.app--flashing {
+  animation: flash-saturation 1s ease-in-out infinite;
+}
+
+/* Darken the full page background in sync with the content flash */
+body:has(.app--flashing) {
+  animation: flash-bg 1s ease-in-out infinite;
+}
+
+@keyframes flash-bg {
+  0%, 100% { background-color: var(--color-bg); }
+  50%      { background-color: #a8c4de; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app--flashing {
+    animation: none;
+    /* Provide a static subtle cue instead of animation */
+    filter: saturate(0.35) brightness(0.88);
+  }
+  body:has(.app--flashing) {
+    animation: none;
+    background-color: #a8c4de;
+  }
+}
+
+@keyframes pulse-snooze {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(106, 27, 154, 0.0); }
+  50%       { box-shadow: 0 0 0 6px rgba(106, 27, 154, 0.2); }
+}

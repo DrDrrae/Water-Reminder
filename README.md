@@ -12,6 +12,7 @@ Water Reminder sits quietly on your desktop and fires a periodic hydration remin
 - Play a short alert tone synthesized in the browser audio engine (no external audio file needed).
 - Bring the app window to the foreground.
 - Flash the Windows taskbar or bounce the macOS dock icon.
+- Pulse the entire app UI (desaturating and darkening the background, cards, and all content) once per second until you acknowledge, snooze, or stop the reminder.
 
 If you want to be honest about actually drinking water, enable **Require Acknowledgment**: the timer pauses after every reminder and only resumes once you click "I Drank Water!". You can also snooze a reminder to delay it by a configurable number of minutes.
 If sound is enabled, you can also have the app repeat the alert tone every 10 seconds until you acknowledge or snooze the reminder.
@@ -33,6 +34,7 @@ Settings are automatically saved to disk with a short debounce — nothing is lo
 | Repeating alert sound | Optional 10-second repeats until you acknowledge or snooze |
 | Window focus | Surfaces the app on reminder; on Windows it does not steal focus |
 | Taskbar / dock flash | Flashes taskbar (Windows) or bounces dock icon (macOS) |
+| UI flash animation | Full-screen saturation + brightness pulse on every reminder; auto-clears when you acknowledge, snooze, or stop |
 | Pause / resume | Saves exact remaining time; counter is preserved |
 | Persistent settings | Saved to `settings.json` in the OS app data directory |
 | Settings validation | Backend rejects invalid values; errors shown in the UI |
