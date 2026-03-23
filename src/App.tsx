@@ -135,6 +135,9 @@ function App() {
   // Whether to show the snooze button prominently (set true after a reminder fires).
   const [showSnoozeBanner, setShowSnoozeBanner] = useState(false);
 
+  // Whether the UI is currently flashing to draw attention to a reminder.
+  const [isFlashing, setIsFlashing] = useState(false);
+
   // Whether the settings panel is expanded.
   const [settingsOpen, setSettingsOpen] = useState(true);
 
@@ -143,6 +146,9 @@ function App() {
 
   // Ref to store the snooze-banner auto-hide timer so we can cancel it.
   const snoozeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Ref to store the auto-clear timer for the UI flash effect.
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Ref to store the debounce timer for auto-saving settings.
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -280,6 +286,15 @@ function App() {
     remState.config.repeat_sound_until_action,
   ]);
 
+  /** Stop the UI flash animation and cancel the auto-clear safety timer. */
+  const clearFlashEffect = useCallback(() => {
+    setIsFlashing(false);
+    if (flashTimerRef.current !== null) {
+      clearTimeout(flashTimerRef.current);
+      flashTimerRef.current = null;
+    }
+  }, []);
+
   // ---------------------------------------------------------------------------
   // Subscribe to backend events
   // ---------------------------------------------------------------------------
@@ -300,6 +315,11 @@ function App() {
           setShowSnoozeBanner(true);
           if (snoozeTimerRef.current !== null) clearTimeout(snoozeTimerRef.current);
           snoozeTimerRef.current = setTimeout(() => setShowSnoozeBanner(false), 30_000);
+
+          // Start the UI flash effect; auto-clear after 30 s as a safety net.
+          setIsFlashing(true);
+          if (flashTimerRef.current !== null) clearTimeout(flashTimerRef.current);
+          flashTimerRef.current = setTimeout(() => setIsFlashing(false), 30_000);
         });
 
         if (disposed) {
@@ -313,6 +333,7 @@ function App() {
             .then(setRemState)
             .catch((e: unknown) => setError(String(e)));
           setShowSnoozeBanner(false);
+          clearFlashEffect();
         });
 
         if (disposed) {
@@ -386,9 +407,10 @@ function App() {
       disposed = true;
       unlisteners.forEach((fn) => fn());
       if (snoozeTimerRef.current !== null) clearTimeout(snoozeTimerRef.current);
+      if (flashTimerRef.current !== null) clearTimeout(flashTimerRef.current);
       if (repeatSoundTimerRef.current !== null) clearInterval(repeatSoundTimerRef.current);
     };
-  }, []);
+  }, [clearFlashEffect]);
 
   // ---------------------------------------------------------------------------
   // Poll the backend every second while the timer is Running to keep the
@@ -458,10 +480,11 @@ function App() {
       const snapshot = await invoke<StateSnapshot>("stop_reminders");
       setRemState(snapshot);
       setShowSnoozeBanner(false);
+      clearFlashEffect();
     } catch (e) {
       setError(String(e));
     }
-  }, []);
+  }, [clearFlashEffect]);
 
   /** Toggle between Paused and Running. Pause preserves the current count. */
   const handlePauseResume = useCallback(async () => {
@@ -483,10 +506,11 @@ function App() {
       const snapshot = await invoke<StateSnapshot>("reset_reminders");
       setRemState(snapshot);
       setShowSnoozeBanner(false);
+      clearFlashEffect();
     } catch (e) {
       setError(String(e));
     }
-  }, []);
+  }, [clearFlashEffect]);
 
   /** Snooze the current reminder – delays the next fire by snooze_minutes. */
   const handleSnooze = useCallback(async () => {
@@ -495,10 +519,11 @@ function App() {
       const snapshot = await invoke<StateSnapshot>("snooze_reminder");
       setRemState(snapshot);
       setShowSnoozeBanner(false);
+      clearFlashEffect();
     } catch (e) {
       setError(String(e));
     }
-  }, []);
+  }, [clearFlashEffect]);
 
   /** Acknowledge the reminder and start the next full interval. */
   const handleAcknowledge = useCallback(async () => {
@@ -507,10 +532,11 @@ function App() {
       const snapshot = await invoke<StateSnapshot>("acknowledge_reminder");
       setRemState(snapshot);
       setShowSnoozeBanner(false);
+      clearFlashEffect();
     } catch (e) {
       setError(String(e));
     }
-  }, []);
+  }, [clearFlashEffect]);
 
   // ---------------------------------------------------------------------------
   // Derived state flags used to drive the UI
@@ -530,7 +556,7 @@ function App() {
   // Render
   // ---------------------------------------------------------------------------
   return (
-    <div className="app">
+    <div className={`app${isFlashing ? " app--flashing" : ""}`}>
       {/* ── Header ── */}
       <header className="app-header">
         <div className="header-icon" aria-hidden="true">💧</div>
