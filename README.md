@@ -21,6 +21,16 @@ Settings are automatically saved to disk with a short debounce — nothing is lo
 
 ---
 
+## ScreenShots
+
+### Windows
+
+<img width="602" height="887" alt="image" src="https://github.com/user-attachments/assets/a0ca9da2-2db8-48ad-9e7b-51dad1cf5425" />
+<img width="602" height="887" alt="image" src="https://github.com/user-attachments/assets/20c193ff-5941-499e-a288-b6ea42b44321" />
+
+
+---
+
 ## Features
 
 | Feature | Details |
