@@ -56,6 +56,14 @@ pub enum ReminderStatus {
     WaitingAck,
 }
 
+/// The user's visual theme preference for the frontend.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ThemePreference {
+    System,
+    AlwaysLight,
+    AlwaysDark,
+}
+
 /// User-configurable parameters for the reminder timer.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReminderConfig {
@@ -64,9 +72,15 @@ pub struct ReminderConfig {
     /// Maximum number of reminders before auto-stopping.
     /// `None` means the timer runs indefinitely.
     pub max_count: Option<u32>,
+    /// Which visual theme the frontend should use.
+    #[serde(default = "default_theme_preference")]
+    pub theme_preference: ThemePreference,
     /// How long to delay the next reminder when the user clicks "Snooze",
     /// in minutes.
     pub snooze_minutes: u32,
+    /// When `true`, a fresh reminder session starts automatically on launch.
+    #[serde(default)]
+    pub auto_start: bool,
     /// When `true`, the timer pauses after each reminder fires and waits for
     /// the user to acknowledge before scheduling the next interval.
     #[serde(default = "serde_default_true")]
@@ -94,7 +108,9 @@ impl Default for ReminderConfig {
         Self {
             interval_minutes: 60,
             max_count: None,
+            theme_preference: ThemePreference::System,
             snooze_minutes: 5,
+            auto_start: false,
             require_acknowledgment: true,
             play_sound: true,
             repeat_sound_until_action: true,
@@ -108,6 +124,10 @@ impl Default for ReminderConfig {
 /// to `true`.  (`serde(default)` alone would give `false` for booleans.)
 fn serde_default_true() -> bool {
     true
+}
+
+fn default_theme_preference() -> ThemePreference {
+    ThemePreference::System
 }
 
 /// All mutable runtime state, stored behind a `Mutex`.
@@ -729,7 +749,8 @@ fn stop_window_attention(app_handle: &AppHandle) {
 // ── Application entry point ───────────────────────────────────────────────────
 
 /// Called from `main.rs`.  Builds the Tauri application, registers plugins
-/// and commands, loads any previously saved settings, then runs the event loop.
+/// and commands, loads any previously saved settings, optionally auto-starts
+/// reminders, then runs the event loop.
 pub fn run() {
     tauri::Builder::default()
         // Register the native dialog plugin.
@@ -742,14 +763,34 @@ pub fn run() {
         .manage(Arc::new(Mutex::new(AppState::new())) as SharedState)
         // Setup hook: runs once after the app is initialised but before any
         // window is shown.  We use it to load the persisted config so that
-        // `get_status` returns the correct settings from the very first call.
+        // `get_status` returns the correct settings from the very first call,
+        // and optionally auto-start a fresh reminder session.
         .setup(|app| {
             if let Some(saved_config) = load_config(app.handle()) {
                 // Validate the stored config before applying it; if it is
                 // somehow corrupt we simply keep the built-in defaults.
                 if validate_config(&saved_config).is_ok() {
+                    let mut auto_start_generation = None;
+
                     if let Ok(mut s) = app.state::<SharedState>().lock() {
                         s.config = saved_config;
+
+                        if s.config.auto_start {
+                            s.status = ReminderStatus::Running;
+                            s.reminder_count = 0;
+                            s.remaining_when_paused = None;
+                            s.next_fire_at = Some(
+                                Instant::now()
+                                    + Duration::from_secs(s.config.interval_minutes as u64 * 60),
+                            );
+                            s.thread_generation += 1;
+                            auto_start_generation = Some(s.thread_generation);
+                        }
+                    }
+
+                    if let Some(my_gen) = auto_start_generation {
+                        let shared_state = app.state::<SharedState>();
+                        spawn_timer_thread(Arc::clone(&*shared_state), app.handle().clone(), my_gen);
                     }
                 }
             }

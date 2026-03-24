@@ -21,6 +21,50 @@
   --color-text:         #0d1f3c;
   --color-text-muted:   #546e7a;
   --color-text-on-blue: #ffffff;
+  --color-bg-accent-1:  rgba(0, 188, 212, 0.12);
+  --color-bg-accent-2:  rgba(26, 108, 240, 0.10);
+
+  --color-status-running-bg:     #e8f5e9;
+  --color-status-running-border: #a5d6a7;
+  --color-status-running-text:   #2e7d32;
+  --color-status-paused-bg:      #fff3e0;
+  --color-status-paused-border:  #ffcc80;
+  --color-status-paused-text:    #e65100;
+  --color-status-stopped-bg:     #f5f5f5;
+  --color-status-stopped-border: #e0e0e0;
+  --color-status-stopped-text:   #616161;
+  --color-status-waiting-bg:     #fff8e1;
+  --color-status-waiting-border: #ffe082;
+  --color-status-waiting-text:   #f57f17;
+  --color-status-waiting-pulse:  rgba(245, 127, 23, 0.2);
+
+  --color-error-bg:     #ffebee;
+  --color-error-border: #ef9a9a;
+
+  --color-button-pause-bg:       #fff3e0;
+  --color-button-pause-hover:    #ffe0b2;
+  --color-button-pause-border:   #ffcc80;
+  --color-button-stop-bg:        #ffebee;
+  --color-button-stop-hover:     #ffcdd2;
+  --color-button-stop-border:    #ef9a9a;
+  --color-button-reset-bg:       #f5f5f5;
+  --color-button-reset-hover:    #eeeeee;
+  --color-button-reset-border:   #e0e0e0;
+  --color-button-reset-text:     #424242;
+  --color-button-snooze-bg:      #f3e5f5;
+  --color-button-snooze-hover:   #e1bee7;
+  --color-button-snooze-border:  #ce93d8;
+
+  --color-ack-bg-start: #fff8e1;
+  --color-ack-bg-end:   #e8f5e9;
+  --color-ack-border:   #ffe082;
+  --color-ack-title:    #e65100;
+
+  --flash-mid-saturation:    0.2;
+  --flash-mid-brightness:    0.82;
+  --flash-static-saturation: 0.35;
+  --flash-static-brightness: 0.88;
+  --flash-bg-mid:            #a8c4de;
 
   /* Spacing & shape */
   --radius:  12px;
@@ -32,6 +76,79 @@
     "Helvetica Neue", Arial, sans-serif;
   line-height: 1.5;
   color: var(--color-text);
+}
+
+html[data-theme="dark"] {
+  --color-primary:       #5ea2ff;
+  --color-primary-dark:  #8dc1ff;
+  --color-primary-light: #183458;
+  --color-secondary:     #5fe3f5;
+
+  --color-success: #7ad97f;
+  --color-warning: #ffb86b;
+  --color-danger:  #ff8a80;
+  --color-snooze:  #d9b0ff;
+
+  --color-bg:           #0b1627;
+  --color-surface:      #13233a;
+  --color-border:       #274766;
+  --color-text:         #e8f1fe;
+  --color-text-muted:   #a9bdd8;
+  --color-text-on-blue: #ffffff;
+  --color-bg-accent-1:  rgba(95, 227, 245, 0.08);
+  --color-bg-accent-2:  rgba(94, 162, 255, 0.10);
+
+  --color-status-running-bg:     #14311d;
+  --color-status-running-border: #2d6f3b;
+  --color-status-running-text:   #8ce99a;
+  --color-status-paused-bg:      #332100;
+  --color-status-paused-border:  #9f6a09;
+  --color-status-paused-text:    #ffcf85;
+  --color-status-stopped-bg:     #1a2433;
+  --color-status-stopped-border: #32465e;
+  --color-status-stopped-text:   #b7c5d8;
+  --color-status-waiting-bg:     #332600;
+  --color-status-waiting-border: #ad8b00;
+  --color-status-waiting-text:   #ffd761;
+  --color-status-waiting-pulse:  rgba(255, 215, 97, 0.2);
+
+  --color-error-bg:     #3a1518;
+  --color-error-border: #8d2b34;
+
+  --color-button-pause-bg:       #332100;
+  --color-button-pause-hover:    #47310c;
+  --color-button-pause-border:   #9f6a09;
+  --color-button-stop-bg:        #3a1518;
+  --color-button-stop-hover:     #4a1d21;
+  --color-button-stop-border:    #8d2b34;
+  --color-button-reset-bg:       #1b2534;
+  --color-button-reset-hover:    #243247;
+  --color-button-reset-border:   #32465e;
+  --color-button-reset-text:     #d8e3f4;
+  --color-button-snooze-bg:      #2b1740;
+  --color-button-snooze-hover:   #3a2355;
+  --color-button-snooze-border:  #8f57c9;
+
+  --color-ack-bg-start: #332600;
+  --color-ack-bg-end:   #173024;
+  --color-ack-border:   #ad8b00;
+  --color-ack-title:    #ffcf85;
+
+  --flash-mid-saturation:    0.2;
+  --flash-mid-brightness:    1.18;
+  --flash-static-saturation: 0.35;
+  --flash-static-brightness: 1.12;
+  --flash-bg-mid:            #183456;
+
+  --shadow: 0 10px 30px rgba(3, 8, 18, 0.45);
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
 }
 
 /* ============================================================
@@ -48,8 +165,8 @@ body {
   min-height: 100vh;
   /* Subtle animated water gradient background */
   background-image:
-    radial-gradient(ellipse at 20% 10%, rgba(0, 188, 212, 0.12) 0%, transparent 60%),
-    radial-gradient(ellipse at 80% 90%, rgba(26, 108, 240, 0.10) 0%, transparent 60%);
+    radial-gradient(ellipse at 20% 10%, var(--color-bg-accent-1) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 90%, var(--color-bg-accent-2) 0%, transparent 60%);
 }
 
 /* ============================================================
@@ -133,19 +250,19 @@ body {
 }
 
 .status-running {
-  background: #e8f5e9;
-  color: var(--color-success);
-  border: 1px solid #a5d6a7;
+  background: var(--color-status-running-bg);
+  color: var(--color-status-running-text);
+  border: 1px solid var(--color-status-running-border);
 }
 .status-paused {
-  background: #fff3e0;
-  color: var(--color-warning);
-  border: 1px solid #ffcc80;
+  background: var(--color-status-paused-bg);
+  color: var(--color-status-paused-text);
+  border: 1px solid var(--color-status-paused-border);
 }
 .status-stopped {
-  background: #f5f5f5;
-  color: #616161;
-  border: 1px solid #e0e0e0;
+  background: var(--color-status-stopped-bg);
+  color: var(--color-status-stopped-text);
+  border: 1px solid var(--color-status-stopped-border);
 }
 
 /* Countdown */
@@ -216,7 +333,7 @@ body {
 
 .settings-toggle:hover {
   background: var(--color-primary-light);
-  border-color: #a9c7f5;
+  border-color: var(--color-primary);
   color: var(--color-primary);
 }
 
@@ -350,8 +467,8 @@ fieldset:disabled .radio-label {
   justify-content: space-between;
   gap: 8px;
   padding: 10px 12px;
-  background: #ffebee;
-  border: 1px solid #ef9a9a;
+  background: var(--color-error-bg);
+  border: 1px solid var(--color-error-border);
   border-radius: var(--radius-sm);
   color: var(--color-danger);
   font-size: 0.85rem;
@@ -412,60 +529,60 @@ fieldset:disabled .radio-label {
 
 /* Pause / Resume */
 .btn-pause {
-  background: #fff3e0;
+  background: var(--color-button-pause-bg);
   color: var(--color-warning);
-  border: 1px solid #ffcc80;
+  border: 1px solid var(--color-button-pause-border);
 }
 .btn-pause:hover:not(:disabled) {
-  background: #ffe0b2;
+  background: var(--color-button-pause-hover);
 }
 
 /* Stop */
 .btn-stop {
-  background: #ffebee;
+  background: var(--color-button-stop-bg);
   color: var(--color-danger);
-  border: 1px solid #ef9a9a;
+  border: 1px solid var(--color-button-stop-border);
 }
 .btn-stop:hover:not(:disabled) {
-  background: #ffcdd2;
+  background: var(--color-button-stop-hover);
 }
 
 /* Reset */
 .btn-reset {
-  background: #f5f5f5;
-  color: #424242;
-  border: 1px solid #e0e0e0;
+  background: var(--color-button-reset-bg);
+  color: var(--color-button-reset-text);
+  border: 1px solid var(--color-button-reset-border);
 }
 .btn-reset:hover:not(:disabled) {
-  background: #eeeeee;
+  background: var(--color-button-reset-hover);
 }
 
 /* Snooze – full-width, distinct purple tint */
 .btn-snooze {
   width: 100%;
   padding: 12px;
-  background: #f3e5f5;
+  background: var(--color-button-snooze-bg);
   color: var(--color-snooze);
-  border: 1px solid #ce93d8;
+  border: 1px solid var(--color-button-snooze-border);
   font-size: 1rem;
   border-radius: var(--radius-sm);
   animation: pulse-snooze 2s ease-in-out infinite;
 }
 .btn-snooze:hover:not(:disabled) {
-  background: #e1bee7;
+  background: var(--color-button-snooze-hover);
 }
 
 /* Status badge for WaitingAck state */
 .status-waitingack {
-  background: #fff8e1;
-  color: #f57f17;
-  border: 1px solid #ffe082;
+  background: var(--color-status-waiting-bg);
+  color: var(--color-status-waiting-text);
+  border: 1px solid var(--color-status-waiting-border);
   animation: pulse-waiting 1.5s ease-in-out infinite;
 }
 
 @keyframes pulse-waiting {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 127, 23, 0.0); }
-  50%       { box-shadow: 0 0 0 5px rgba(245, 127, 23, 0.2); }
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  50%       { box-shadow: 0 0 0 5px var(--color-status-waiting-pulse); }
 }
 
 /* ============================================================
@@ -476,8 +593,8 @@ fieldset:disabled .radio-label {
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  background: linear-gradient(135deg, #fff8e1 0%, #e8f5e9 100%);
-  border: 2px solid #ffe082;
+  background: linear-gradient(135deg, var(--color-ack-bg-start) 0%, var(--color-ack-bg-end) 100%);
+  border: 2px solid var(--color-ack-border);
   animation: ack-entrance 0.3s ease-out;
 }
 
@@ -495,7 +612,7 @@ fieldset:disabled .radio-label {
 .ack-title {
   font-size: 1.25rem;
   font-weight: 700;
-  color: #e65100;
+  color: var(--color-ack-title);
   margin: 0;
 }
 
@@ -570,7 +687,7 @@ fieldset:disabled .toggle-label input {
    ============================================================ */
 @keyframes flash-saturation {
   0%, 100% { filter: saturate(1) brightness(1); }
-  50%      { filter: saturate(0.2) brightness(0.82); }
+  50%      { filter: saturate(var(--flash-mid-saturation)) brightness(var(--flash-mid-brightness)); }
 }
 
 .app--flashing {
@@ -584,18 +701,18 @@ body:has(.app--flashing) {
 
 @keyframes flash-bg {
   0%, 100% { background-color: var(--color-bg); }
-  50%      { background-color: #a8c4de; }
+  50%      { background-color: var(--flash-bg-mid); }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .app--flashing {
     animation: none;
     /* Provide a static subtle cue instead of animation */
-    filter: saturate(0.35) brightness(0.88);
+    filter: saturate(var(--flash-static-saturation)) brightness(var(--flash-static-brightness));
   }
   body:has(.app--flashing) {
     animation: none;
-    background-color: #a8c4de;
+    background-color: var(--flash-bg-mid);
   }
 }
 

@@ -12,7 +12,7 @@ Water Reminder sits quietly on your desktop and fires a periodic hydration remin
 - Play a short alert tone synthesized in the browser audio engine (no external audio file needed).
 - Bring the app window to the foreground.
 - Flash the Windows taskbar or bounce the macOS dock icon.
-- Pulse the entire app UI (desaturating and darkening the background, cards, and all content) once per second until you acknowledge, snooze, or stop the reminder.
+- Pulse the entire app UI once per second until you acknowledge, snooze, or stop the reminder, darkening in light mode and brightening in dark mode.
 
 If you want to be honest about actually drinking water, enable **Require Acknowledgment**: the timer pauses after every reminder and only resumes once you click "I Drank Water!". You can also snooze a reminder to delay it by a configurable number of minutes.
 If sound is enabled, you can also have the app repeat the alert tone every 10 seconds until you acknowledge or snooze the reminder.
@@ -34,6 +34,8 @@ Settings are automatically saved to disk with a short debounce — nothing is lo
 | Repeating alert sound | Optional 10-second repeats until you acknowledge or snooze |
 | Window focus | Surfaces the app on reminder; on Windows it does not steal focus |
 | Taskbar / dock flash | Flashes taskbar (Windows) or bounces dock icon (macOS) |
+| Theme preference | Follow system, always light, or always dark |
+| Launch auto-start | Optionally starts a fresh reminder session automatically on app launch |
 | UI flash animation | Full-screen saturation + brightness pulse on every reminder; auto-clears when you acknowledge, snooze, or stop |
 | Pause / resume | Saves exact remaining time; counter is preserved |
 | Persistent settings | Saved to `settings.json` in the OS app data directory |
@@ -61,6 +63,8 @@ Stopped → Running → (reminder fires) → WaitingAck ⟶ Running
 | Reminder interval | 60 min | 1 – 1 440 min | How often the reminder fires |
 | Max count | Unlimited | 1 – 9 999 or ∞ | App stops automatically after *N* reminders |
 | Snooze duration | 5 min | 1 – 60 min | Delay applied by the Snooze button |
+| Theme | System | System / Light / Dark | Controls the app's light or dark appearance |
+| Auto-start on launch | Off | On / Off | Starts a fresh reminder session automatically when the app opens |
 | Require acknowledgment | On | On / Off | Pauses after each reminder until you confirm |
 | Play sound | On | On / Off | Alert tone on reminder |
 | Repeat sound until action | On | On / Off | Replays every 10 seconds while waiting for acknowledgment |

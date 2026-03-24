@@ -8,14 +8,21 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 // Type definitions that mirror the Rust backend structs
 // ---------------------------------------------------------------------------
 
+type ThemePreference = "System" | "AlwaysLight" | "AlwaysDark";
+type EffectiveTheme = "light" | "dark";
+
 /** Configuration settings for the reminder timer. */
 interface ReminderConfig {
   /** How often to fire a reminder, in minutes. */
   interval_minutes: number;
   /** Maximum number of reminders before auto-stopping. null = infinite. */
   max_count: number | null;
+  /** Visual theme preference for the app. */
+  theme_preference: ThemePreference;
   /** How long to delay the reminder when snoozed, in minutes. */
   snooze_minutes: number;
+  /** When true, reminders start automatically when the app launches. */
+  auto_start: boolean;
   /** When true, the timer waits for the user to acknowledge before starting the next interval. */
   require_acknowledgment: boolean;
   /** When true, an alert sound is played when a reminder fires. */
@@ -87,11 +94,21 @@ function formatCountdown(seconds: number | null): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
+function getSystemPrefersDark(): boolean {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return false;
+  }
+
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
 /** Default config values used when the app first loads (before backend responds). */
 const DEFAULT_CONFIG: ReminderConfig = {
   interval_minutes: 60,
   max_count: null,
+  theme_preference: "System",
   snooze_minutes: 5,
+  auto_start: false,
   require_acknowledgment: true,
   play_sound: true,
   repeat_sound_until_action: true,
@@ -124,6 +141,10 @@ function App() {
   const [formSnooze, setFormSnooze] = useState(DEFAULT_CONFIG.snooze_minutes);
   const [isInfinite, setIsInfinite] = useState(true);
   const [formMaxCount, setFormMaxCount] = useState(10);
+  const [formThemePreference, setFormThemePreference] = useState<ThemePreference>(
+    DEFAULT_CONFIG.theme_preference,
+  );
+  const [formAutoStart, setFormAutoStart] = useState(DEFAULT_CONFIG.auto_start);
   const [formRequireAck, setFormRequireAck] = useState(DEFAULT_CONFIG.require_acknowledgment);
   const [formPlaySound, setFormPlaySound] = useState(DEFAULT_CONFIG.play_sound);
   const [formRepeatSoundUntilAction, setFormRepeatSoundUntilAction] = useState(
@@ -131,6 +152,7 @@ function App() {
   );
   const [formFocusWindow, setFormFocusWindow] = useState(DEFAULT_CONFIG.focus_window);
   const [formFlashTaskbar, setFormFlashTaskbar] = useState(DEFAULT_CONFIG.flash_taskbar);
+  const [systemPrefersDark, setSystemPrefersDark] = useState(getSystemPrefersDark);
 
   // Whether to show the snooze button prominently (set true after a reminder fires).
   const [showSnoozeBanner, setShowSnoozeBanner] = useState(false);
@@ -181,6 +203,41 @@ function App() {
     reminderStatusRef.current = remState.status;
   }, [remState.status]);
 
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return;
+    }
+
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleChange = (event: MediaQueryListEvent) => {
+      setSystemPrefersDark(event.matches);
+    };
+
+    setSystemPrefersDark(mediaQuery.matches);
+
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", handleChange);
+      return () => mediaQuery.removeEventListener("change", handleChange);
+    }
+
+    mediaQuery.addListener(handleChange);
+    return () => mediaQuery.removeListener(handleChange);
+  }, []);
+
+  const effectiveTheme: EffectiveTheme =
+    formThemePreference === "AlwaysDark"
+      ? "dark"
+      : formThemePreference === "AlwaysLight"
+        ? "light"
+        : systemPrefersDark
+          ? "dark"
+          : "light";
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", effectiveTheme);
+    document.documentElement.style.colorScheme = effectiveTheme;
+  }, [effectiveTheme]);
+
   // ---------------------------------------------------------------------------
   // Load initial state from the backend on first render.
   // The backend's setup hook restores the last-saved config, so get_status
@@ -195,6 +252,8 @@ function App() {
         setFormSnooze(snapshot.config.snooze_minutes);
         setIsInfinite(snapshot.config.max_count === null);
         setFormMaxCount(snapshot.config.max_count ?? 10);
+        setFormThemePreference(snapshot.config.theme_preference);
+        setFormAutoStart(snapshot.config.auto_start);
         setFormRequireAck(snapshot.config.require_acknowledgment);
         setFormPlaySound(snapshot.config.play_sound);
         setFormRepeatSoundUntilAction(snapshot.config.repeat_sound_until_action);
@@ -224,7 +283,9 @@ function App() {
       const config: ReminderConfig = {
         interval_minutes: formInterval,
         max_count: isInfinite ? null : formMaxCount,
+        theme_preference: formThemePreference,
         snooze_minutes: formSnooze,
+        auto_start: formAutoStart,
         require_acknowledgment: formRequireAck,
         play_sound: formPlaySound,
         repeat_sound_until_action: formRepeatSoundUntilAction,
@@ -249,6 +310,8 @@ function App() {
     formSnooze,
     isInfinite,
     formMaxCount,
+    formThemePreference,
+    formAutoStart,
     formRequireAck,
     formPlaySound,
     formRepeatSoundUntilAction,
@@ -442,7 +505,9 @@ function App() {
   const buildConfig = useCallback((): ReminderConfig => ({
     interval_minutes: formInterval,
     max_count: isInfinite ? null : formMaxCount,
+    theme_preference: formThemePreference,
     snooze_minutes: formSnooze,
+    auto_start: formAutoStart,
     require_acknowledgment: formRequireAck,
     play_sound: formPlaySound,
     repeat_sound_until_action: formRepeatSoundUntilAction,
@@ -452,7 +517,9 @@ function App() {
     formInterval,
     isInfinite,
     formMaxCount,
+    formThemePreference,
     formSnooze,
+    formAutoStart,
     formRequireAck,
     formPlaySound,
     formRepeatSoundUntilAction,
@@ -815,6 +882,63 @@ function App() {
             />
             <span id="snooze-desc" className="field-hint">
               How long to delay the reminder when you snooze it (1–60 min).
+            </span>
+          </div>
+
+          <div className="form-group">
+            <fieldset disabled={!canEdit}>
+              <legend>Theme</legend>
+              <div className="radio-group">
+                <label className="radio-label">
+                  <input
+                    type="radio"
+                    name="theme-preference"
+                    checked={formThemePreference === "System"}
+                    onChange={() => setFormThemePreference("System")}
+                  />
+                  Follow system setting
+                </label>
+                <label className="radio-label">
+                  <input
+                    type="radio"
+                    name="theme-preference"
+                    checked={formThemePreference === "AlwaysLight"}
+                    onChange={() => setFormThemePreference("AlwaysLight")}
+                  />
+                  Always light
+                </label>
+                <label className="radio-label">
+                  <input
+                    type="radio"
+                    name="theme-preference"
+                    checked={formThemePreference === "AlwaysDark"}
+                    onChange={() => setFormThemePreference("AlwaysDark")}
+                  />
+                  Always dark
+                </label>
+              </div>
+            </fieldset>
+            <span className="field-hint">
+              The reminder flash still desaturates the UI; in dark mode it brightens instead of darkening.
+            </span>
+          </div>
+
+          <div className="form-group">
+            <fieldset disabled={!canEdit}>
+              <legend>Startup</legend>
+              <div className="toggle-group">
+                <label className="toggle-label">
+                  <input
+                    type="checkbox"
+                    checked={formAutoStart}
+                    onChange={(e) => setFormAutoStart(e.target.checked)}
+                  />
+                  <span>Automatically start reminders when the app launches</span>
+                </label>
+              </div>
+            </fieldset>
+            <span className="field-hint">
+              When enabled, launch starts a fresh reminder session using your saved settings.
             </span>
           </div>
 
