@@ -13,7 +13,7 @@
         "label": "main",
         "title": "Water Reminder",
         "width": 480,
-        "height": 640,
+        "height": 730,
         "minWidth": 380,
         "minHeight": 560,
         "resizable": true,
