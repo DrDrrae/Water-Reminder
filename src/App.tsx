@@ -605,6 +605,19 @@ function App() {
     }
   }, [clearFlashEffect]);
 
+  /** Restart the active countdown from the full configured interval. */
+  const handleDrinkWater = useCallback(async () => {
+    try {
+      setError(null);
+      const snapshot = await invoke<StateSnapshot>("reset_active_countdown");
+      setRemState(snapshot);
+      setShowSnoozeBanner(false);
+      clearFlashEffect();
+    } catch (e) {
+      setError(String(e));
+    }
+  }, [clearFlashEffect]);
+
   // ---------------------------------------------------------------------------
   // Derived state flags used to drive the UI
   // ---------------------------------------------------------------------------
@@ -751,15 +764,28 @@ function App() {
           </button>
         </div>
 
-        {/* Snooze button – shown when timer is active (but not WaitingAck, which has its own card) */}
-        {showSnooze && !isWaitingAck && (
-          <button
-            className="btn btn-snooze"
-            onClick={handleSnooze}
-            aria-label={`Snooze reminder for ${remState.config.snooze_minutes} minutes`}
-          >
-            💤 Snooze ({remState.config.snooze_minutes} min)
-          </button>
+        {/* Running-state reminder actions live below the primary controls. */}
+        {!isWaitingAck && (
+          <div className="secondary-actions">
+            <button
+              className="btn btn-acknowledge"
+              onClick={handleDrinkWater}
+              disabled={!isRunning}
+              aria-label="I drank water and want to restart the reminder interval"
+            >
+              ✓ I Drank Water!
+            </button>
+
+            {showSnooze && (
+              <button
+                className="btn btn-snooze"
+                onClick={handleSnooze}
+                aria-label={`Snooze reminder for ${remState.config.snooze_minutes} minutes`}
+              >
+                💤 Snooze ({remState.config.snooze_minutes} min)
+              </button>
+            )}
+          </div>
         )}
       </section>
 
