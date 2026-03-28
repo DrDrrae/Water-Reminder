@@ -84,7 +84,7 @@ Stopped → Running → (reminder fires) → WaitingAck ⟶ Running
 | Focus window | On | On / Off | Brings window to front; on Windows this avoids stealing focus |
 | Flash taskbar | On | On / Off | Flashes taskbar / bounces dock icon on reminder |
 
-> **Note:** All settings are locked while the timer is Running or Paused. Stop the timer first to change them.
+> **Note:** `Reminder interval`, `Max count`, and `Snooze duration` stay locked during active reminder sessions. `Theme`, `Auto-start on launch`, and notification behavior settings remain editable in `Running`, `Paused`, and `WaitingAck`, and apply immediately or on the next reminder event as appropriate.
 
 Settings are stored in `settings.json` in the platform app data directory:
 

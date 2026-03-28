@@ -270,11 +270,39 @@ fn save_config(
     validate_config(&config)?;
 
     let mut s = state.lock().map_err(|e| e.to_string())?;
+    let active_session = s.status != ReminderStatus::Stopped;
+    let changed_timing_settings = config.interval_minutes != s.config.interval_minutes
+        || config.max_count != s.config.max_count
+        || config.snooze_minutes != s.config.snooze_minutes;
+
+    if active_session && changed_timing_settings {
+        return Err(
+            "Stop the current reminder session to change the reminder interval, maximum reminders, or snooze duration."
+                .into(),
+        );
+    }
+
+    let resolve_waiting_ack = s.status == ReminderStatus::WaitingAck
+        && s.config.require_acknowledgment
+        && !config.require_acknowledgment;
+
     // Update the in-memory config so `get_status` reflects the latest settings
     // even before the user presses Start.
     s.config = config.clone();
+
+    if resolve_waiting_ack {
+        s.status = ReminderStatus::Running;
+        s.next_fire_at =
+            Some(Instant::now() + Duration::from_secs(s.config.interval_minutes as u64 * 60));
+        s.remaining_when_paused = None;
+    }
+
     let snap = snapshot(&s);
     drop(s); // Release the lock before I/O.
+
+    if resolve_waiting_ack {
+        stop_window_attention(&app_handle);
+    }
 
     // Write to disk (errors are logged, not propagated).
     persist_config(&app_handle, &config);

@@ -180,6 +180,7 @@ function App() {
 
   // Tracks the latest reminder status for the close-request handler.
   const reminderStatusRef = useRef<ReminderStatus>(DEFAULT_STATE.status);
+  const previousReminderStatusRef = useRef<ReminderStatus>(DEFAULT_STATE.status);
 
   // Prevents multiple overlapping exit confirmation prompts.
   const closePromptOpenRef = useRef(false);
@@ -327,8 +328,8 @@ function App() {
 
     if (
       remState.status !== "WaitingAck" ||
-      !remState.config.play_sound ||
-      !remState.config.repeat_sound_until_action
+      !formPlaySound ||
+      !formRepeatSoundUntilAction
     ) {
       return;
     }
@@ -344,9 +345,9 @@ function App() {
       }
     };
   }, [
+    formPlaySound,
+    formRepeatSoundUntilAction,
     remState.status,
-    remState.config.play_sound,
-    remState.config.repeat_sound_until_action,
   ]);
 
   /** Stop the UI flash animation and cancel the auto-clear safety timer. */
@@ -357,6 +358,21 @@ function App() {
       flashTimerRef.current = null;
     }
   }, []);
+
+  useEffect(() => {
+    const previousStatus = previousReminderStatusRef.current;
+
+    if (previousStatus === "WaitingAck" && remState.status !== "WaitingAck") {
+      setShowSnoozeBanner(false);
+      clearFlashEffect();
+    }
+
+    if (previousStatus === "Stopped" && remState.status === "Running") {
+      setSettingsOpen(false);
+    }
+
+    previousReminderStatusRef.current = remState.status;
+  }, [clearFlashEffect, remState.status]);
 
   // ---------------------------------------------------------------------------
   // Subscribe to backend events
@@ -492,11 +508,6 @@ function App() {
     return () => clearInterval(id);
   }, [remState.status]);
 
-  // Auto-collapse settings when reminders are running to free vertical space.
-  useEffect(() => {
-    if (remState.status === "Running") setSettingsOpen(false);
-  }, [remState.status]);
-
   // ---------------------------------------------------------------------------
   // Command handlers
   // ---------------------------------------------------------------------------
@@ -526,6 +537,26 @@ function App() {
     formFocusWindow,
     formFlashTaskbar,
   ]);
+
+  useEffect(() => {
+    if (
+      isInitialLoadRef.current ||
+      remState.status !== "WaitingAck" ||
+      formRequireAck ||
+      !remState.config.require_acknowledgment
+    ) {
+      return;
+    }
+
+    if (autosaveTimerRef.current !== null) {
+      clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+
+    invoke<StateSnapshot>("save_config", { config: buildConfig() })
+      .then(setRemState)
+      .catch((e: unknown) => setError(String(e)));
+  }, [buildConfig, formRequireAck, remState.config.require_acknowledgment, remState.status]);
 
   /** Start the reminder timer with the current settings. */
   const handleStart = useCallback(async () => {
@@ -625,9 +656,7 @@ function App() {
   const isPaused = remState.status === "Paused";
   const isStopped = remState.status === "Stopped";
   const isWaitingAck = remState.status === "WaitingAck";
-
-  // Settings are only editable when the timer is fully stopped.
-  const canEdit = isStopped;
+  const canEditTimingSettings = isStopped;
 
   // Show the snooze button when the timer is active or a reminder just fired.
   const showSnooze = !isStopped && (showSnoozeBanner || isRunning || isPaused || isWaitingAck);
@@ -815,9 +844,9 @@ function App() {
           aria-hidden={!settingsOpen}
         >
           <p className="settings-hint">
-            {canEdit
-              ? "Settings are saved automatically as you type."
-              : "Stop the timer to change settings."}
+            {isStopped
+              ? "All settings are saved automatically as you type."
+              : "Theme, startup, and notification settings save automatically during active reminders. Stop the timer to change interval, max reminders, or snooze duration."}
           </p>
 
           {/* Interval */}
@@ -832,7 +861,7 @@ function App() {
               min={1}
               max={1440}
               value={formInterval}
-              disabled={!canEdit}
+              disabled={!canEditTimingSettings}
               onChange={(e) =>
                 setFormInterval(Math.max(1, parseInt(e.target.value) || 1))
               }
@@ -845,7 +874,7 @@ function App() {
 
           {/* Max reminders */}
           <div className="form-group">
-            <fieldset disabled={!canEdit}>
+            <fieldset disabled={!canEditTimingSettings}>
               <legend>
                 Maximum Reminders
               </legend>
@@ -875,7 +904,7 @@ function App() {
                     min={1}
                     max={9999}
                     value={formMaxCount}
-                    disabled={isInfinite}
+                    disabled={isInfinite || !canEditTimingSettings}
                     className="inline-number"
                     aria-label="Maximum reminder count"
                     onChange={(e) =>
@@ -900,7 +929,7 @@ function App() {
               min={1}
               max={60}
               value={formSnooze}
-              disabled={!canEdit}
+              disabled={!canEditTimingSettings}
               onChange={(e) =>
                 setFormSnooze(Math.max(1, parseInt(e.target.value) || 1))
               }
@@ -912,7 +941,7 @@ function App() {
           </div>
 
           <div className="form-group">
-            <fieldset disabled={!canEdit}>
+            <fieldset>
               <legend>Theme</legend>
               <div className="radio-group">
                 <label className="radio-label">
@@ -950,7 +979,7 @@ function App() {
           </div>
 
           <div className="form-group">
-            <fieldset disabled={!canEdit}>
+            <fieldset>
               <legend>Startup</legend>
               <div className="toggle-group">
                 <label className="toggle-label">
@@ -970,7 +999,7 @@ function App() {
 
           {/* Notification behaviour toggles */}
           <div className="form-group">
-            <fieldset disabled={!canEdit}>
+            <fieldset>
               <legend>Notification Behavior</legend>
               <div className="toggle-group">
                 <label className="toggle-label">
@@ -1015,6 +1044,9 @@ function App() {
                 </label>
               </div>
             </fieldset>
+            <span className="field-hint">
+              These settings stay editable in all active reminder states and apply immediately.
+            </span>
           </div>
         </div>
       </section>
