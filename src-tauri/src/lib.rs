@@ -472,6 +472,34 @@ fn snooze_reminder(
     Ok(snap)
 }
 
+/// Restart the active countdown from the full configured interval.
+///
+/// Only valid while status is `Running`. The existing timer thread keeps the
+/// same generation and simply observes the updated fire time on its next loop.
+#[tauri::command]
+fn reset_active_countdown(
+    state: State<'_, SharedState>,
+    app_handle: AppHandle,
+) -> Result<StateSnapshot, String> {
+    let mut s = state.lock().map_err(|e| e.to_string())?;
+
+    if s.status != ReminderStatus::Running {
+        return Err("Countdown can only be reset while reminders are running.".into());
+    }
+
+    s.next_fire_at = Some(
+        Instant::now() + Duration::from_secs(s.config.interval_minutes as u64 * 60),
+    );
+    s.remaining_when_paused = None;
+
+    let snap = snapshot(&s);
+    drop(s);
+
+    stop_window_attention(&app_handle);
+
+    Ok(snap)
+}
+
 /// Return the current state without mutating anything.  Called by the
 /// front-end every second to keep the countdown display in sync.
 #[tauri::command]
@@ -804,6 +832,7 @@ pub fn run() {
             pause_reminders,
             resume_reminders,
             reset_reminders,
+            reset_active_countdown,
             snooze_reminder,
             acknowledge_reminder,
             get_status,

@@ -494,6 +494,12 @@ fieldset:disabled .radio-label {
   gap: 10px;
 }
 
+.secondary-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 /* ── Base button ── */
 .btn {
   display: inline-flex;

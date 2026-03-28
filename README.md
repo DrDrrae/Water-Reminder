@@ -15,6 +15,7 @@ Water Reminder sits quietly on your desktop and fires a periodic hydration remin
 - Pulse the entire app UI once per second until you acknowledge, snooze, or stop the reminder, darkening in light mode and brightening in dark mode.
 
 If you want to be honest about actually drinking water, enable **Require Acknowledgment**: the timer pauses after every reminder and only resumes once you click "I Drank Water!". You can also snooze a reminder to delay it by a configurable number of minutes.
+While the timer is already running, a separate `I Drank Water!` control in the main controls card lets you immediately restart the countdown from the full configured interval without stopping the current reminder session or resetting the reminder count.
 If sound is enabled, you can also have the app repeat the alert tone every 10 seconds until you acknowledge or snooze the reminder.
 
 Settings are automatically saved to disk with a short debounce — nothing is lost if you close and reopen the app.
@@ -48,6 +49,7 @@ Settings are automatically saved to disk with a short debounce — nothing is lo
 | Launch auto-start | Optionally starts a fresh reminder session automatically on app launch |
 | UI flash animation | Full-screen saturation + brightness pulse on every reminder; auto-clears when you acknowledge, snooze, or stop |
 | Pause / resume | Saves exact remaining time; counter is preserved |
+| Running-state quick reset | `I Drank Water!` restarts the current countdown from the full interval while staying in `Running` |
 | Persistent settings | Saved to `settings.json` in the OS app data directory |
 | Settings validation | Backend rejects invalid values; errors shown in the UI |
 
@@ -61,6 +63,7 @@ Stopped → Running → (reminder fires) → WaitingAck ⟶ Running
 
 - **Stopped** – timer inactive, counter reset to 0.
 - **Running** – counting down; a live countdown is shown in the UI.
+- **Running actions** – you can pause, stop, reset the session, snooze, or click `I Drank Water!` to restart the countdown from the full interval immediately.
 - **Paused** – countdown suspended; remaining time and counter both preserved.
 - **WaitingAck** – shown when *Require Acknowledgment* is on; next interval does not start until you acknowledge or snooze.
 
