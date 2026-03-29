@@ -101,6 +101,10 @@ pub struct ReminderConfig {
     /// reminder.
     #[serde(default = "serde_default_true")]
     pub flash_taskbar: bool,
+    /// When `true`, the main window is minimized after the user acknowledges a
+    /// pending reminder.
+    #[serde(default)]
+    pub minimize_on_acknowledge: bool,
 }
 
 impl Default for ReminderConfig {
@@ -116,6 +120,7 @@ impl Default for ReminderConfig {
             repeat_sound_until_action: true,
             focus_window: true,
             flash_taskbar: true,
+            minimize_on_acknowledge: false,
         }
     }
 }
@@ -560,12 +565,17 @@ fn acknowledge_reminder(
         Instant::now() + Duration::from_secs(s.config.interval_minutes as u64 * 60),
     );
     s.status = ReminderStatus::Running;
+    let should_minimize = s.config.minimize_on_acknowledge;
 
     let snap = snapshot(&s);
     drop(s);
 
     // Clear any pending taskbar-flash / user-attention request.
     stop_window_attention(&app_handle);
+
+    if should_minimize {
+        minimize_window(&app_handle);
+    }
 
     Ok(snap)
 }
@@ -791,6 +801,13 @@ fn flash_window_taskbar(app_handle: &AppHandle) {
     use tauri_runtime::UserAttentionType;
     if let Some(win) = app_handle.get_webview_window("main") {
         let _ = win.request_user_attention(Some(UserAttentionType::Critical));
+    }
+}
+
+/// Minimize the main window to the taskbar / dock.
+fn minimize_window(app_handle: &AppHandle) {
+    if let Some(win) = app_handle.get_webview_window("main") {
+        let _ = win.minimize();
     }
 }
 

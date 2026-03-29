@@ -33,6 +33,8 @@ interface ReminderConfig {
   focus_window: boolean;
   /** When true, the taskbar / dock icon flashes when a reminder fires. */
   flash_taskbar: boolean;
+  /** When true, the window is minimized after acknowledging a pending reminder. */
+  minimize_on_acknowledge: boolean;
 }
 
 /** Possible states of the reminder timer. */
@@ -114,6 +116,7 @@ const DEFAULT_CONFIG: ReminderConfig = {
   repeat_sound_until_action: true,
   focus_window: true,
   flash_taskbar: true,
+  minimize_on_acknowledge: false,
 };
 
 /** Default state when the app first loads. */
@@ -152,6 +155,9 @@ function App() {
   );
   const [formFocusWindow, setFormFocusWindow] = useState(DEFAULT_CONFIG.focus_window);
   const [formFlashTaskbar, setFormFlashTaskbar] = useState(DEFAULT_CONFIG.flash_taskbar);
+  const [formMinimizeOnAcknowledge, setFormMinimizeOnAcknowledge] = useState(
+    DEFAULT_CONFIG.minimize_on_acknowledge,
+  );
   const [systemPrefersDark, setSystemPrefersDark] = useState(getSystemPrefersDark);
 
   // Whether to show the snooze button prominently (set true after a reminder fires).
@@ -260,6 +266,7 @@ function App() {
         setFormRepeatSoundUntilAction(snapshot.config.repeat_sound_until_action);
         setFormFocusWindow(snapshot.config.focus_window);
         setFormFlashTaskbar(snapshot.config.flash_taskbar);
+        setFormMinimizeOnAcknowledge(snapshot.config.minimize_on_acknowledge);
         // Mark the initial load as done so subsequent changes auto-save.
         isInitialLoadRef.current = false;
       })
@@ -292,6 +299,7 @@ function App() {
         repeat_sound_until_action: formRepeatSoundUntilAction,
         focus_window: formFocusWindow,
         flash_taskbar: formFlashTaskbar,
+        minimize_on_acknowledge: formMinimizeOnAcknowledge,
       };
 
       // save_config validates, persists to disk, and updates the in-memory config.
@@ -318,6 +326,7 @@ function App() {
     formRepeatSoundUntilAction,
     formFocusWindow,
     formFlashTaskbar,
+    formMinimizeOnAcknowledge,
   ]);
 
   useEffect(() => {
@@ -524,6 +533,7 @@ function App() {
     repeat_sound_until_action: formRepeatSoundUntilAction,
     focus_window: formFocusWindow,
     flash_taskbar: formFlashTaskbar,
+    minimize_on_acknowledge: formMinimizeOnAcknowledge,
   }), [
     formInterval,
     isInfinite,
@@ -536,6 +546,7 @@ function App() {
     formRepeatSoundUntilAction,
     formFocusWindow,
     formFlashTaskbar,
+    formMinimizeOnAcknowledge,
   ]);
 
   useEffect(() => {
@@ -1041,6 +1052,14 @@ function App() {
                     onChange={(e) => setFormFlashTaskbar(e.target.checked)}
                   />
                   <span>Flash taskbar / dock icon</span>
+                </label>
+                <label className="toggle-label">
+                  <input
+                    type="checkbox"
+                    checked={formMinimizeOnAcknowledge}
+                    onChange={(e) => setFormMinimizeOnAcknowledge(e.target.checked)}
+                  />
+                  <span>Minimize window to taskbar when acknowledging a reminder</span>
                 </label>
               </div>
             </fieldset>
