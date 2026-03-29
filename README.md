@@ -12,6 +12,7 @@ Water Reminder sits quietly on your desktop and fires a periodic hydration remin
 - Play a short alert tone synthesized in the browser audio engine (no external audio file needed).
 - Bring the app window to the foreground.
 - Flash the Windows taskbar or bounce the macOS dock icon.
+- Optionally minimize the app window to the taskbar after you acknowledge a reminder.
 - Pulse the entire app UI once per second until you acknowledge, snooze, or stop the reminder, darkening in light mode and brightening in dark mode.
 
 If you want to be honest about actually drinking water, enable **Require Acknowledgment**: the timer pauses after every reminder and only resumes once you click "I Drank Water!". You can also snooze a reminder to delay it by a configurable number of minutes.
@@ -45,6 +46,7 @@ Settings are automatically saved to disk with a short debounce — nothing is lo
 | Repeating alert sound | Optional 10-second repeats until you acknowledge or snooze |
 | Window focus | Surfaces the app on reminder; on Windows it does not steal focus |
 | Taskbar / dock flash | Flashes taskbar (Windows) or bounces dock icon (macOS) |
+| Acknowledge auto-minimize | Optionally minimizes the window after `I Drank Water!` in `WaitingAck` |
 | Theme preference | Follow system, always light, or always dark |
 | Launch auto-start | Optionally starts a fresh reminder session automatically on app launch |
 | UI flash animation | Full-screen saturation + brightness pulse on every reminder; auto-clears when you acknowledge, snooze, or stop |
@@ -83,6 +85,7 @@ Stopped → Running → (reminder fires) → WaitingAck ⟶ Running
 | Repeat sound until action | On | On / Off | Replays every 10 seconds while waiting for acknowledgment |
 | Focus window | On | On / Off | Brings window to front; on Windows this avoids stealing focus |
 | Flash taskbar | On | On / Off | Flashes taskbar / bounces dock icon on reminder |
+| Minimize on acknowledge | Off | On / Off | Minimizes the window after acknowledging a pending reminder |
 
 > **Note:** `Reminder interval`, `Max count`, and `Snooze duration` stay locked during active reminder sessions. `Theme`, `Auto-start on launch`, and notification behavior settings remain editable in `Running`, `Paused`, and `WaitingAck`, and apply immediately or on the next reminder event as appropriate.
 
