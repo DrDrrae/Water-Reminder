@@ -870,6 +870,21 @@ pub fn run() {
                         let shared_state = app.state::<SharedState>();
                         spawn_timer_thread(Arc::clone(&*shared_state), app.handle().clone(), my_gen);
                     }
+
+                    // When both auto-start and minimize-on-acknowledge are
+                    // enabled the user intends to run the app silently in the
+                    // background, so start with the window already minimized.
+                    let start_minimized = app
+                        .state::<SharedState>()
+                        .lock()
+                        .map(|s| s.config.auto_start && s.config.minimize_on_acknowledge)
+                        .unwrap_or(false);
+
+                    if start_minimized {
+                        if let Some(win) = app.get_webview_window("main") {
+                            let _ = win.minimize();
+                        }
+                    }
                 }
             }
             Ok(())
