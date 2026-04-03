@@ -1,6 +1,6 @@
 [package]
 name = "water-reminder"
-version = "0.1.2"
+version = "0.1.3"
 description = "A configurable water reminder application built with Tauri v2"
 authors = []
 edition = "2021"
