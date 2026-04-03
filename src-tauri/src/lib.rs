@@ -105,6 +105,10 @@ pub struct ReminderConfig {
     /// pending reminder.
     #[serde(default)]
     pub minimize_on_acknowledge: bool,
+    /// When `true`, the window is kept always-on-top while the app is in the
+    /// `WaitingAck` state.  Only has effect when `focus_window` is also `true`.
+    #[serde(default)]
+    pub always_on_top_while_waiting: bool,
 }
 
 impl Default for ReminderConfig {
@@ -121,6 +125,7 @@ impl Default for ReminderConfig {
             focus_window: true,
             flash_taskbar: true,
             minimize_on_acknowledge: false,
+            always_on_top_while_waiting: false,
         }
     }
 }
@@ -388,7 +393,7 @@ fn stop_reminders(
     Ok(snap)
 }
 
-/// Pause the timer.  The remaining time until the next reminder is saved so
+/// Pause the timer.The remaining time until the next reminder is saved so
 /// that `resume_reminders` can pick up exactly where it left off.
 ///
 /// The reminder count is intentionally preserved on pause so that resuming
@@ -580,7 +585,7 @@ fn acknowledge_reminder(
     Ok(snap)
 }
 
-// ── Timer thread ──────────────────────────────────────────────────────────────
+// ── Timer thread──────────────────────────────────────────────────────────────
 
 /// Spawn a background thread that drives the reminder schedule.
 ///

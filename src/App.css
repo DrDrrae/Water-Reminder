@@ -682,6 +682,15 @@ fieldset:disabled .toggle-label {
   cursor: not-allowed;
 }
 
+.toggle-label--disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.toggle-label--disabled input {
+  cursor: not-allowed;
+}
+
 fieldset:disabled .toggle-label input {
   cursor: not-allowed;
 }
