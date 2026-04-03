@@ -11,6 +11,7 @@ Water Reminder sits quietly on your desktop and fires a periodic hydration remin
 - Send a native OS desktop notification.
 - Play a short alert tone synthesized in the browser audio engine (no external audio file needed).
 - Bring the app window to the foreground.
+- **Keep the window always on top** until you acknowledge or snooze (optional; requires *Bring window to front* to be enabled).
 - Flash the Windows taskbar or bounce the macOS dock icon.
 - Optionally minimize the app window to the taskbar after you acknowledge a reminder.
 - Pulse the entire app UI once per second until you acknowledge, snooze, or stop the reminder, darkening in light mode and brightening in dark mode.
@@ -47,6 +48,7 @@ Settings are automatically saved to disk with a short debounce — nothing is lo
 | Window focus | Surfaces the app on reminder; on Windows it does not steal focus |
 | Taskbar / dock flash | Flashes taskbar (Windows) or bounces dock icon (macOS) |
 | Acknowledge auto-minimize | Optionally minimizes the window after `I Drank Water!` in `WaitingAck` |
+| Always-on-top while waiting | Keeps the window above all other windows during `WaitingAck`; requires *Focus window* to be enabled |
 | Theme preference | Follow system, always light, or always dark |
 | Launch auto-start | Optionally starts a fresh reminder session automatically on app launch |
 | UI flash animation | Full-screen saturation + brightness pulse on every reminder; auto-clears when you acknowledge, snooze, or stop |
@@ -84,6 +86,7 @@ Stopped → Running → (reminder fires) → WaitingAck ⟶ Running
 | Play sound | On | On / Off | Alert tone on reminder |
 | Repeat sound until action | On | On / Off | Replays every 10 seconds while waiting for acknowledgment |
 | Focus window | On | On / Off | Brings window to front; on Windows this avoids stealing focus |
+| Always on top while waiting | Off | On / Off | Keeps the window above all others during `WaitingAck`; only available when *Focus window* is on |
 | Flash taskbar | On | On / Off | Flashes taskbar / bounces dock icon on reminder |
 | Minimize on acknowledge | Off | On / Off | Minimizes the window after acknowledging a pending reminder |
 
@@ -171,7 +174,7 @@ The packaged installer is written to `src-tauri/target/release/bundle/`.
 
 ## Platform notes
 
-- **Windows** – taskbar flash uses the `Critical` attention type, which flashes both the window frame and the taskbar button until the app is focused. If **Focus window** is enabled, the app is also raised above other windows without taking keyboard focus.
+- **Windows** – taskbar flash uses the `Critical` attention type, which flashes both the window frame and the taskbar button until the app is focused. If **Focus window** is enabled, the app is also raised above other windows without taking keyboard focus. If **Always on top while waiting** is also enabled, the window stays above all other windows while `WaitingAck` is active and reverts to normal z-order once you acknowledge or snooze.
 - **macOS** – dock bounce uses the `Critical` attention type (continuous bounce until focused); bundle identifier is `com.waterreminder.desktop`.
 - **Linux** – taskbar flash behaviour depends on the window manager (GNOME, KDE, i3, etc.) and is not guaranteed.
 - **Closing the app** – if the timer is `Stopped`, closing the window exits immediately. If a reminder session is active (`Running`, `Paused`, or `WaitingAck`), the app asks for confirmation before closing.

@@ -35,6 +35,9 @@ interface ReminderConfig {
   flash_taskbar: boolean;
   /** When true, the window is minimized after acknowledging a pending reminder. */
   minimize_on_acknowledge: boolean;
+  /** When true, the window is kept always on top while waiting for acknowledgment.
+   *  Only has effect when focus_window is also true. */
+  always_on_top_while_waiting: boolean;
 }
 
 /** Possible states of the reminder timer. */
@@ -117,6 +120,7 @@ const DEFAULT_CONFIG: ReminderConfig = {
   focus_window: true,
   flash_taskbar: true,
   minimize_on_acknowledge: false,
+  always_on_top_while_waiting: false,
 };
 
 /** Default state when the app first loads. */
@@ -157,6 +161,9 @@ function App() {
   const [formFlashTaskbar, setFormFlashTaskbar] = useState(DEFAULT_CONFIG.flash_taskbar);
   const [formMinimizeOnAcknowledge, setFormMinimizeOnAcknowledge] = useState(
     DEFAULT_CONFIG.minimize_on_acknowledge,
+  );
+  const [formAlwaysOnTopWhileWaiting, setFormAlwaysOnTopWhileWaiting] = useState(
+    DEFAULT_CONFIG.always_on_top_while_waiting,
   );
   const [systemPrefersDark, setSystemPrefersDark] = useState(getSystemPrefersDark);
 
@@ -267,6 +274,7 @@ function App() {
         setFormFocusWindow(snapshot.config.focus_window);
         setFormFlashTaskbar(snapshot.config.flash_taskbar);
         setFormMinimizeOnAcknowledge(snapshot.config.minimize_on_acknowledge);
+        setFormAlwaysOnTopWhileWaiting(snapshot.config.always_on_top_while_waiting);
         // Mark the initial load as done so subsequent changes auto-save.
         isInitialLoadRef.current = false;
       })
@@ -300,6 +308,7 @@ function App() {
         focus_window: formFocusWindow,
         flash_taskbar: formFlashTaskbar,
         minimize_on_acknowledge: formMinimizeOnAcknowledge,
+        always_on_top_while_waiting: formAlwaysOnTopWhileWaiting,
       };
 
       // save_config validates, persists to disk, and updates the in-memory config.
@@ -327,6 +336,7 @@ function App() {
     formFocusWindow,
     formFlashTaskbar,
     formMinimizeOnAcknowledge,
+    formAlwaysOnTopWhileWaiting,
   ]);
 
   useEffect(() => {
@@ -367,6 +377,30 @@ function App() {
       flashTimerRef.current = null;
     }
   }, []);
+
+  // ---------------------------------------------------------------------------
+  // Manage always-on-top state in the frontend.
+  //
+  // We do this in TypeScript rather than from the Rust timer thread because
+  // the timer thread calls Win32 SetWindowPos with SWP_ASYNCWINDOWPOS (required
+  // for cross-thread calls), and bring_window_to_front posts TOPMOST then
+  // NOTOPMOST to the message queue.  Any Win32 call we make from the timer
+  // thread races with those queued messages.  By the time the TypeScript effect
+  // runs, all queued Win32 messages have long been processed, so our IPC call
+  // to setAlwaysOnTop wins cleanly.
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (remState.status !== "WaitingAck" || !formFocusWindow || !formAlwaysOnTopWhileWaiting) {
+      return;
+    }
+
+    const appWindow = getCurrentWindow();
+    void appWindow.setAlwaysOnTop(true);
+
+    return () => {
+      void appWindow.setAlwaysOnTop(false);
+    };
+  }, [remState.status, formFocusWindow, formAlwaysOnTopWhileWaiting]);
 
   useEffect(() => {
     const previousStatus = previousReminderStatusRef.current;
@@ -534,6 +568,7 @@ function App() {
     focus_window: formFocusWindow,
     flash_taskbar: formFlashTaskbar,
     minimize_on_acknowledge: formMinimizeOnAcknowledge,
+    always_on_top_while_waiting: formAlwaysOnTopWhileWaiting,
   }), [
     formInterval,
     isInfinite,
@@ -547,6 +582,7 @@ function App() {
     formFocusWindow,
     formFlashTaskbar,
     formMinimizeOnAcknowledge,
+    formAlwaysOnTopWhileWaiting,
   ]);
 
   useEffect(() => {
@@ -1044,6 +1080,15 @@ function App() {
                     onChange={(e) => setFormFocusWindow(e.target.checked)}
                   />
                   <span>Bring window to front (without focus on Windows)</span>
+                </label>
+                <label className={`toggle-label${!formFocusWindow ? " toggle-label--disabled" : ""}`}>
+                  <input
+                    type="checkbox"
+                    checked={formAlwaysOnTopWhileWaiting}
+                    disabled={!formFocusWindow}
+                    onChange={(e) => setFormAlwaysOnTopWhileWaiting(e.target.checked)}
+                  />
+                  <span>Keep window always on top while waiting for acknowledgment</span>
                 </label>
                 <label className="toggle-label">
                   <input
