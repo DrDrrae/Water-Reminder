@@ -106,8 +106,8 @@ Settings are stored in `settings.json` in the platform app data directory:
 
 | Layer | Technology |
 |---|---|
-| UI framework | React 18.3 + TypeScript 5.8 |
-| Build tool | Vite 6.3 |
+| UI framework | React 19.x + TypeScript 6.x |
+| Build tool | Vite 8.x |
 | Desktop shell | Tauri 2.10 |
 | Backend language | Rust 2021 edition |
 | Notifications plugin | tauri-plugin-notification 2.x |
@@ -129,7 +129,7 @@ Settings are stored in `settings.json` in the platform app data directory:
 
 ### All platforms
 
-- [Node.js](https://nodejs.org/) (LTS recommended)
+- [Node.js](https://nodejs.org/) `^20.19.0 || >=22.12.0` (required by Vite 8; use the LTS v22 release or newer)
 - [Rust](https://www.rust-lang.org/tools/install) via `rustup`
 
 ### Windows (additional)
