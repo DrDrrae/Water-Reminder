@@ -344,12 +344,13 @@ body {
 
 .settings-body {
   overflow: hidden;
-  max-height: 900px;
+  max-height: 2000px;
   opacity: 1;
   visibility: visible;
   padding-top: 12px;
+  padding-bottom: 4px;
   transition: max-height 0.28s ease, opacity 0.2s ease, padding-top 0.2s ease,
-    visibility 0s linear 0s;
+    padding-bottom 0.2s ease, visibility 0s linear 0s;
 }
 
 .settings-body--collapsed {
@@ -357,9 +358,10 @@ body {
   opacity: 0;
   visibility: hidden;
   padding-top: 0;
+  padding-bottom: 0;
   pointer-events: none;
   transition: max-height 0.22s ease, opacity 0.15s ease, padding-top 0.15s ease,
-    visibility 0s linear 0.22s;
+    padding-bottom 0.15s ease, visibility 0s linear 0.22s;
 }
 
 .settings-hint {
