@@ -801,11 +801,24 @@ fn bring_window_to_front_without_focus_on_windows(app_handle: &AppHandle) {
 }
 
 /// Ask the OS to flash / bounce the taskbar or dock icon to attract the user's
-/// attention.  Errors are logged but not propagated.
+/// attention.
+///
+/// On Windows we call `FlashWindowEx` directly to avoid a bug in tao where
+/// `request_user_attention` skips the call entirely when the window is already
+/// the active window.  On other platforms we delegate to Tauri's built-in API.
 fn flash_window_taskbar(app_handle: &AppHandle) {
-    use tauri_runtime::UserAttentionType;
-    if let Some(win) = app_handle.get_webview_window("main") {
-        let _ = win.request_user_attention(Some(UserAttentionType::Critical));
+    #[cfg(target_os = "windows")]
+    {
+        flash_window_taskbar_windows(app_handle);
+        return;
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        use tauri_runtime::UserAttentionType;
+        if let Some(win) = app_handle.get_webview_window("main") {
+            let _ = win.request_user_attention(Some(UserAttentionType::Critical));
+        }
     }
 }
 
@@ -818,9 +831,107 @@ fn minimize_window(app_handle: &AppHandle) {
 
 /// Stop any pending taskbar flash / dock-bounce that was started by a
 /// previous call to `flash_window_taskbar`.
+///
+/// On Windows we call `FlashWindowEx` directly for the same reason as
+/// `flash_window_taskbar` — tao's early-return guard would otherwise prevent
+/// `FLASHW_STOP` from being sent when the app window is already active (which
+/// it typically is at the moment the user acknowledges a reminder).
 fn stop_window_attention(app_handle: &AppHandle) {
+    #[cfg(target_os = "windows")]
+    {
+        stop_window_attention_windows(app_handle);
+        return;
+    }
+
+    #[cfg(not(target_os = "windows"))]
     if let Some(win) = app_handle.get_webview_window("main") {
         let _ = win.request_user_attention(None);
+    }
+}
+
+/// Windows-specific: start flashing the taskbar button using the Windows API
+/// directly, bypassing tao's `request_user_attention` which skips the
+/// `FlashWindowEx` call when the window is the currently active window.
+#[cfg(target_os = "windows")]
+fn flash_window_taskbar_windows(app_handle: &AppHandle) {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use windows_sys::Win32::{
+        Foundation::HWND,
+        UI::WindowsAndMessaging::{FlashWindowEx, FLASHWINFO, FLASHW_ALL, FLASHW_TIMERNOFG},
+    };
+
+    let Some(win) = app_handle.get_webview_window("main") else {
+        return;
+    };
+
+    let window_handle = match win.window_handle() {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("[water-reminder] Failed to get native window handle: {e}");
+            return;
+        }
+    };
+
+    let hwnd = match window_handle.as_raw() {
+        RawWindowHandle::Win32(h) => h.hwnd.get() as HWND,
+        _ => {
+            eprintln!("[water-reminder] Unexpected non-Win32 window handle on Windows.");
+            return;
+        }
+    };
+
+    unsafe {
+        let flash_info = FLASHWINFO {
+            cbSize: std::mem::size_of::<FLASHWINFO>() as u32,
+            hwnd,
+            dwFlags: FLASHW_ALL | FLASHW_TIMERNOFG,
+            uCount: u32::MAX,
+            dwTimeout: 0,
+        };
+        FlashWindowEx(&flash_info);
+    }
+}
+
+/// Windows-specific: stop any taskbar flash unconditionally using the Windows
+/// API directly.  Unlike tao's `request_user_attention(None)`, this does not
+/// skip the `FlashWindowEx(FLASHW_STOP)` call when the window is active.
+#[cfg(target_os = "windows")]
+fn stop_window_attention_windows(app_handle: &AppHandle) {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use windows_sys::Win32::{
+        Foundation::HWND,
+        UI::WindowsAndMessaging::{FlashWindowEx, FLASHWINFO, FLASHW_STOP},
+    };
+
+    let Some(win) = app_handle.get_webview_window("main") else {
+        return;
+    };
+
+    let window_handle = match win.window_handle() {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("[water-reminder] Failed to get native window handle: {e}");
+            return;
+        }
+    };
+
+    let hwnd = match window_handle.as_raw() {
+        RawWindowHandle::Win32(h) => h.hwnd.get() as HWND,
+        _ => {
+            eprintln!("[water-reminder] Unexpected non-Win32 window handle on Windows.");
+            return;
+        }
+    };
+
+    unsafe {
+        let flash_info = FLASHWINFO {
+            cbSize: std::mem::size_of::<FLASHWINFO>() as u32,
+            hwnd,
+            dwFlags: FLASHW_STOP,
+            uCount: 0,
+            dwTimeout: 0,
+        };
+        FlashWindowEx(&flash_info);
     }
 }
 
