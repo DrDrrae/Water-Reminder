@@ -751,36 +751,40 @@ fn bring_window_to_front(app_handle: &AppHandle) {
 }
 
 #[cfg(target_os = "windows")]
-fn bring_window_to_front_without_focus_on_windows(app_handle: &AppHandle) {
+fn hwnd_from_main_window(app_handle: &AppHandle) -> Option<windows_sys::Win32::Foundation::HWND> {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-    use windows_sys::Win32::{
-        Foundation::HWND,
-        UI::WindowsAndMessaging::{
-            HWND_NOTOPMOST, HWND_TOPMOST, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOMOVE,
-            SWP_NOSIZE, SWP_SHOWWINDOW, SW_SHOWNOACTIVATE, SetWindowPos, ShowWindow,
-        },
-    };
+    use windows_sys::Win32::Foundation::HWND;
 
     let Some(win) = app_handle.get_webview_window("main") else {
-        return;
+        return None;
     };
 
     let window_handle = match win.window_handle() {
-        Ok(handle) => handle,
+        Ok(h) => h,
         Err(e) => {
             eprintln!("[water-reminder] Failed to get native window handle: {e}");
-            let _ = win.show();
-            return;
+            return None;
         }
     };
 
-    let hwnd = match window_handle.as_raw() {
-        RawWindowHandle::Win32(handle) => handle.hwnd.get() as HWND,
+    match window_handle.as_raw() {
+        RawWindowHandle::Win32(h) => Some(h.hwnd.get() as HWND),
         _ => {
             eprintln!("[water-reminder] Unexpected non-Win32 window handle on Windows.");
-            let _ = win.show();
-            return;
+            None
         }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn bring_window_to_front_without_focus_on_windows(app_handle: &AppHandle) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        HWND_NOTOPMOST, HWND_TOPMOST, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOMOVE,
+        SWP_NOSIZE, SWP_SHOWWINDOW, SW_SHOWNOACTIVATE, SetWindowPos, ShowWindow,
+    };
+
+    let Some(hwnd) = hwnd_from_main_window(app_handle) else {
+        return;
     };
 
     unsafe {
@@ -854,30 +858,13 @@ fn stop_window_attention(app_handle: &AppHandle) {
 /// `FlashWindowEx` call when the window is the currently active window.
 #[cfg(target_os = "windows")]
 fn flash_window_taskbar_windows(app_handle: &AppHandle) {
-    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
     use windows_sys::Win32::{
-        Foundation::HWND,
+        Foundation::{GetLastError, SetLastError},
         UI::WindowsAndMessaging::{FlashWindowEx, FLASHWINFO, FLASHW_ALL, FLASHW_TIMERNOFG},
     };
 
-    let Some(win) = app_handle.get_webview_window("main") else {
+    let Some(hwnd) = hwnd_from_main_window(app_handle) else {
         return;
-    };
-
-    let window_handle = match win.window_handle() {
-        Ok(h) => h,
-        Err(e) => {
-            eprintln!("[water-reminder] Failed to get native window handle: {e}");
-            return;
-        }
-    };
-
-    let hwnd = match window_handle.as_raw() {
-        RawWindowHandle::Win32(h) => h.hwnd.get() as HWND,
-        _ => {
-            eprintln!("[water-reminder] Unexpected non-Win32 window handle on Windows.");
-            return;
-        }
     };
 
     unsafe {
@@ -885,10 +872,16 @@ fn flash_window_taskbar_windows(app_handle: &AppHandle) {
             cbSize: std::mem::size_of::<FLASHWINFO>() as u32,
             hwnd,
             dwFlags: FLASHW_ALL | FLASHW_TIMERNOFG,
-            uCount: u32::MAX,
+            // uCount is ignored by the OS when FLASHW_TIMERNOFG is set; use 0.
+            uCount: 0,
             dwTimeout: 0,
         };
+        SetLastError(0);
         FlashWindowEx(&flash_info);
+        let err = GetLastError();
+        if err != 0 {
+            eprintln!("[water-reminder] FlashWindowEx failed to start taskbar flash (error code {err}).");
+        }
     }
 }
 
@@ -897,30 +890,13 @@ fn flash_window_taskbar_windows(app_handle: &AppHandle) {
 /// skip the `FlashWindowEx(FLASHW_STOP)` call when the window is active.
 #[cfg(target_os = "windows")]
 fn stop_window_attention_windows(app_handle: &AppHandle) {
-    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
     use windows_sys::Win32::{
-        Foundation::HWND,
+        Foundation::{GetLastError, SetLastError},
         UI::WindowsAndMessaging::{FlashWindowEx, FLASHWINFO, FLASHW_STOP},
     };
 
-    let Some(win) = app_handle.get_webview_window("main") else {
+    let Some(hwnd) = hwnd_from_main_window(app_handle) else {
         return;
-    };
-
-    let window_handle = match win.window_handle() {
-        Ok(h) => h,
-        Err(e) => {
-            eprintln!("[water-reminder] Failed to get native window handle: {e}");
-            return;
-        }
-    };
-
-    let hwnd = match window_handle.as_raw() {
-        RawWindowHandle::Win32(h) => h.hwnd.get() as HWND,
-        _ => {
-            eprintln!("[water-reminder] Unexpected non-Win32 window handle on Windows.");
-            return;
-        }
     };
 
     unsafe {
@@ -931,7 +907,12 @@ fn stop_window_attention_windows(app_handle: &AppHandle) {
             uCount: 0,
             dwTimeout: 0,
         };
+        SetLastError(0);
         FlashWindowEx(&flash_info);
+        let err = GetLastError();
+        if err != 0 {
+            eprintln!("[water-reminder] FlashWindowEx failed to stop taskbar flash (error code {err}).");
+        }
     }
 }
 
