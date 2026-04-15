@@ -38,6 +38,9 @@ interface ReminderConfig {
   /** When true, the window is kept always on top while waiting for acknowledgment.
    *  Only has effect when focus_window is also true. */
   always_on_top_while_waiting: boolean;
+  /** When true, the system is prevented from sleeping while a session is active.
+   *  Windows only; no-op on other platforms. */
+  keep_awake: boolean;
 }
 
 /** Possible states of the reminder timer. */
@@ -121,6 +124,7 @@ const DEFAULT_CONFIG: ReminderConfig = {
   flash_taskbar: true,
   minimize_on_acknowledge: false,
   always_on_top_while_waiting: false,
+  keep_awake: false,
 };
 
 /** Default state when the app first loads. */
@@ -165,6 +169,7 @@ function App() {
   const [formAlwaysOnTopWhileWaiting, setFormAlwaysOnTopWhileWaiting] = useState(
     DEFAULT_CONFIG.always_on_top_while_waiting,
   );
+  const [formKeepAwake, setFormKeepAwake] = useState(DEFAULT_CONFIG.keep_awake);
   const [systemPrefersDark, setSystemPrefersDark] = useState(getSystemPrefersDark);
 
   // Whether to show the snooze button prominently (set true after a reminder fires).
@@ -275,6 +280,7 @@ function App() {
         setFormFlashTaskbar(snapshot.config.flash_taskbar);
         setFormMinimizeOnAcknowledge(snapshot.config.minimize_on_acknowledge);
         setFormAlwaysOnTopWhileWaiting(snapshot.config.always_on_top_while_waiting);
+        setFormKeepAwake(snapshot.config.keep_awake);
         // Mark the initial load as done so subsequent changes auto-save.
         isInitialLoadRef.current = false;
       })
@@ -309,6 +315,7 @@ function App() {
         flash_taskbar: formFlashTaskbar,
         minimize_on_acknowledge: formMinimizeOnAcknowledge,
         always_on_top_while_waiting: formAlwaysOnTopWhileWaiting,
+        keep_awake: formKeepAwake,
       };
 
       // save_config validates, persists to disk, and updates the in-memory config.
@@ -337,6 +344,7 @@ function App() {
     formFlashTaskbar,
     formMinimizeOnAcknowledge,
     formAlwaysOnTopWhileWaiting,
+    formKeepAwake,
   ]);
 
   useEffect(() => {
@@ -569,6 +577,7 @@ function App() {
     flash_taskbar: formFlashTaskbar,
     minimize_on_acknowledge: formMinimizeOnAcknowledge,
     always_on_top_while_waiting: formAlwaysOnTopWhileWaiting,
+    keep_awake: formKeepAwake,
   }), [
     formInterval,
     isInfinite,
@@ -583,6 +592,7 @@ function App() {
     formFlashTaskbar,
     formMinimizeOnAcknowledge,
     formAlwaysOnTopWhileWaiting,
+    formKeepAwake,
   ]);
 
   useEffect(() => {
@@ -1105,6 +1115,14 @@ function App() {
                     onChange={(e) => setFormMinimizeOnAcknowledge(e.target.checked)}
                   />
                   <span>Minimize window to taskbar when acknowledging a reminder</span>
+                </label>
+                <label className="toggle-label">
+                  <input
+                    type="checkbox"
+                    checked={formKeepAwake}
+                    onChange={(e) => setFormKeepAwake(e.target.checked)}
+                  />
+                  <span>Prevent system sleep while session is active (Windows)</span>
                 </label>
               </div>
             </fieldset>

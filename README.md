@@ -49,6 +49,7 @@ Settings are automatically saved to disk with a short debounce — nothing is lo
 | Taskbar / dock flash | Flashes taskbar (Windows) or bounces dock icon (macOS) |
 | Acknowledge auto-minimize | Optionally minimizes the window after `I Drank Water!` in `WaitingAck` |
 | Always-on-top while waiting | Keeps the window above all other windows during `WaitingAck`; requires *Focus window* to be enabled |
+| Prevent system sleep | Holds a Windows wake lock while the session is active so reminders fire even if the PC would otherwise sleep |
 | Theme preference | Follow system, always light, or always dark |
 | Launch auto-start | Optionally starts a fresh reminder session automatically on app launch |
 | UI flash animation | Full-screen saturation + brightness pulse on every reminder; auto-clears when you acknowledge, snooze, or stop |
@@ -87,6 +88,7 @@ Stopped → Running → (reminder fires) → WaitingAck ⟶ Running
 | Repeat sound until action | On | On / Off | Replays every 10 seconds while waiting for acknowledgment |
 | Focus window | On | On / Off | Brings window to front; on Windows this avoids stealing focus |
 | Always on top while waiting | Off | On / Off | Keeps the window above all others during `WaitingAck`; only available when *Focus window* is on |
+| Prevent system sleep | Off | On / Off | Holds a Windows wake lock while the session is active (Running, Paused, or WaitingAck); Windows only |
 | Flash taskbar | On | On / Off | Flashes taskbar / bounces dock icon on reminder |
 | Minimize on acknowledge | Off | On / Off | Minimizes the window after acknowledging a pending reminder |
 
@@ -174,7 +176,7 @@ The packaged installer is written to `src-tauri/target/release/bundle/`.
 
 ## Platform notes
 
-- **Windows** – taskbar flash uses the `Critical` attention type, which flashes both the window frame and the taskbar button until the app is focused. If **Focus window** is enabled, the app is also raised above other windows without taking keyboard focus. If **Always on top while waiting** is also enabled, the window stays above all other windows while `WaitingAck` is active and reverts to normal z-order once you acknowledge or snooze.
+- **Windows** – taskbar flash uses the `Critical` attention type, which flashes both the window frame and the taskbar button until the app is focused. If **Focus window** is enabled, the app is also raised above other windows without taking keyboard focus. If **Always on top while waiting** is also enabled, the window stays above all other windows while `WaitingAck` is active and reverts to normal z-order once you acknowledge or snooze. If **Prevent system sleep** is enabled, a `SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)` wake lock is held on the main thread for the duration of the session, ensuring timers fire reliably even when the system would otherwise sleep.
 - **macOS** – dock bounce uses the `Critical` attention type (continuous bounce until focused); bundle identifier is `com.waterreminder.desktop`.
 - **Linux** – taskbar flash behaviour depends on the window manager (GNOME, KDE, i3, etc.) and is not guaranteed.
 - **Closing the app** – if the timer is `Stopped`, closing the window exits immediately. If a reminder session is active (`Running`, `Paused`, or `WaitingAck`), the app asks for confirmation before closing.
