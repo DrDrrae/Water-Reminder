@@ -109,6 +109,11 @@ pub struct ReminderConfig {
     /// `WaitingAck` state.  Only has effect when `focus_window` is also `true`.
     #[serde(default)]
     pub always_on_top_while_waiting: bool,
+    /// When `true`, the system is prevented from sleeping while a reminder
+    /// session is active (Running, Paused, or WaitingAck).  Windows only;
+    /// no-op on other platforms.
+    #[serde(default)]
+    pub keep_awake: bool,
 }
 
 impl Default for ReminderConfig {
@@ -126,6 +131,7 @@ impl Default for ReminderConfig {
             flash_taskbar: true,
             minimize_on_acknowledge: false,
             always_on_top_while_waiting: false,
+            keep_awake: false,
         }
     }
 }
@@ -296,6 +302,10 @@ fn save_config(
         && s.config.require_acknowledgment
         && !config.require_acknowledgment;
 
+    // Capture the previous keep_awake value before overwriting the config so
+    // we can detect a toggle and adjust the system wake lock accordingly.
+    let prev_keep_awake = s.config.keep_awake;
+
     // Update the in-memory config so `get_status` reflects the latest settings
     // even before the user presses Start.
     s.config = config.clone();
@@ -312,6 +322,26 @@ fn save_config(
 
     if resolve_waiting_ack {
         stop_window_attention(&app_handle);
+    }
+
+    // If the keep_awake setting changed while a session is active, toggle the
+    // system wake lock accordingly.
+    if active_session {
+        if config.keep_awake && !prev_keep_awake {
+            // Re-acquire the lock to verify the session is still active before
+            // acquiring the wake lock.  Without this check, a concurrent
+            // stop_reminders/reset_reminders could run between the earlier
+            // drop(s) and this point, leaving the system awake unexpectedly.
+            let still_active = state
+                .lock()
+                .map(|s| s.status != ReminderStatus::Stopped)
+                .unwrap_or(false);
+            if still_active {
+                activate_wake_lock(&app_handle);
+            }
+        } else if !config.keep_awake && prev_keep_awake {
+            deactivate_wake_lock(&app_handle);
+        }
     }
 
     // Write to disk (errors are logged, not propagated).
@@ -363,6 +393,10 @@ fn start_reminders(
     // Also persist the config that was just used to start a session.
     persist_config(&app_handle, &config);
 
+    if config.keep_awake {
+        activate_wake_lock(&app_handle);
+    }
+
     spawn_timer_thread(Arc::clone(&*state), app_handle, my_gen);
 
     Ok(snap)
@@ -386,10 +420,14 @@ fn stop_reminders(
     s.reminder_count = 0;
     // Bump generation so the timer thread exits on its next iteration.
     s.thread_generation += 1;
+    let was_keep_awake = s.config.keep_awake;
     let snap = snapshot(&s);
     drop(s);
     // Clear any pending taskbar-flash / user-attention request.
     stop_window_attention(&app_handle);
+    if was_keep_awake {
+        deactivate_wake_lock(&app_handle);
+    }
     Ok(snap)
 }
 
@@ -465,10 +503,14 @@ fn reset_reminders(
     s.remaining_when_paused = None;
     // Bump generation so the timer thread exits.
     s.thread_generation += 1;
+    let was_keep_awake = s.config.keep_awake;
     let snap = snapshot(&s);
     drop(s);
     // Clear any pending taskbar-flash / user-attention request.
     stop_window_attention(&app_handle);
+    if was_keep_awake {
+        deactivate_wake_lock(&app_handle);
+    }
     Ok(snap)
 }
 
@@ -610,8 +652,8 @@ fn spawn_timer_thread(state: SharedState, app_handle: AppHandle, my_gen: u64) {
             thread::sleep(Duration::from_millis(100));
 
             // ── Determine what to do next (hold the lock briefly) ─────────
-            // (new_count, is_last, focus_window, flash_taskbar)
-            let fire_info: Option<(u32, bool, bool, bool)>;
+            // (new_count, is_last, focus_window, flash_taskbar, deactivate_wake_lock)
+            let fire_info: Option<(u32, bool, bool, bool, bool)>;
 
             {
                 let mut s = match state.lock() {
@@ -679,6 +721,7 @@ fn spawn_timer_thread(state: SharedState, app_handle: AppHandle, my_gen: u64) {
                                 is_last,
                                 s.config.focus_window,
                                 s.config.flash_taskbar,
+                                is_last && s.config.keep_awake,
                             ));
                         }
                     }
@@ -687,7 +730,7 @@ fn spawn_timer_thread(state: SharedState, app_handle: AppHandle, my_gen: u64) {
             }
 
             // ── Send notification & emit events (lock NOT held) ───────────
-            if let Some((count, is_last, focus_window, flash_taskbar)) = fire_info {
+            if let Some((count, is_last, focus_window, flash_taskbar, release_wake_lock)) = fire_info {
                 // Send desktop notification.
                 send_notification(&app_handle);
 
@@ -707,6 +750,10 @@ fn spawn_timer_thread(state: SharedState, app_handle: AppHandle, my_gen: u64) {
                 if is_last {
                     // Notify the frontend that the session has completed.
                     let _ = app_handle.emit("reminder-completed", count);
+                    // Release any system wake lock that was held for the session.
+                    if release_wake_lock {
+                        deactivate_wake_lock(&app_handle);
+                    }
                     break; // Exit the timer thread.
                 }
             }
@@ -916,6 +963,59 @@ fn stop_window_attention_windows(app_handle: &AppHandle) {
     }
 }
 
+// ── Wake-lock helpers ─────────────────────────────────────────────────────────
+
+/// Ask the OS not to sleep while a reminder session is active.
+///
+/// On Windows we post a `SetThreadExecutionState` call to the main thread so
+/// the wake lock is always held—and later released—by the same thread.
+/// On other platforms this is a no-op.
+#[cfg(target_os = "windows")]
+fn activate_wake_lock(app_handle: &AppHandle) {
+    if let Err(e) = app_handle.run_on_main_thread(|| {
+        use windows_sys::Win32::System::Power::{
+            ES_CONTINUOUS, ES_SYSTEM_REQUIRED, SetThreadExecutionState,
+        };
+        unsafe {
+            let result = SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED);
+            if result == 0 {
+                eprintln!(
+                    "[water-reminder] SetThreadExecutionState (activate) failed: returned 0."
+                );
+            }
+        }
+    }) {
+        eprintln!("[water-reminder] activate_wake_lock: run_on_main_thread failed: {e}");
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn activate_wake_lock(_app_handle: &AppHandle) {}
+
+/// Release the wake lock previously acquired by `activate_wake_lock`.
+///
+/// Calling `SetThreadExecutionState(ES_CONTINUOUS)` is safe even when no wake
+/// lock is currently held — it is effectively a no-op in that case.
+#[cfg(target_os = "windows")]
+fn deactivate_wake_lock(app_handle: &AppHandle) {
+    if let Err(e) = app_handle.run_on_main_thread(|| {
+        use windows_sys::Win32::System::Power::{ES_CONTINUOUS, SetThreadExecutionState};
+        unsafe {
+            let result = SetThreadExecutionState(ES_CONTINUOUS);
+            if result == 0 {
+                eprintln!(
+                    "[water-reminder] SetThreadExecutionState (deactivate) failed: returned 0."
+                );
+            }
+        }
+    }) {
+        eprintln!("[water-reminder] deactivate_wake_lock: run_on_main_thread failed: {e}");
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn deactivate_wake_lock(_app_handle: &AppHandle) {}
+
 // ── Application entry point ───────────────────────────────────────────────────
 
 /// Called from `main.rs`.  Builds the Tauri application, registers plugins
@@ -941,6 +1041,7 @@ pub fn run() {
                 // somehow corrupt we simply keep the built-in defaults.
                 if validate_config(&saved_config).is_ok() {
                     let mut auto_start_generation = None;
+                    let mut auto_start_keep_awake = false;
 
                     if let Ok(mut s) = app.state::<SharedState>().lock() {
                         s.config = saved_config;
@@ -955,12 +1056,16 @@ pub fn run() {
                             );
                             s.thread_generation += 1;
                             auto_start_generation = Some(s.thread_generation);
+                            auto_start_keep_awake = s.config.keep_awake;
                         }
                     }
 
                     if let Some(my_gen) = auto_start_generation {
                         let shared_state = app.state::<SharedState>();
                         spawn_timer_thread(Arc::clone(&*shared_state), app.handle().clone(), my_gen);
+                        if auto_start_keep_awake {
+                            activate_wake_lock(app.handle());
+                        }
                     }
 
                     // When both auto-start and minimize-on-acknowledge are
