@@ -328,7 +328,17 @@ fn save_config(
     // system wake lock accordingly.
     if active_session {
         if config.keep_awake && !prev_keep_awake {
-            activate_wake_lock(&app_handle);
+            // Re-acquire the lock to verify the session is still active before
+            // acquiring the wake lock.  Without this check, a concurrent
+            // stop_reminders/reset_reminders could run between the earlier
+            // drop(s) and this point, leaving the system awake unexpectedly.
+            let still_active = state
+                .lock()
+                .map(|s| s.status != ReminderStatus::Stopped)
+                .unwrap_or(false);
+            if still_active {
+                activate_wake_lock(&app_handle);
+            }
         } else if !config.keep_awake && prev_keep_awake {
             deactivate_wake_lock(&app_handle);
         }
@@ -962,14 +972,21 @@ fn stop_window_attention_windows(app_handle: &AppHandle) {
 /// On other platforms this is a no-op.
 #[cfg(target_os = "windows")]
 fn activate_wake_lock(app_handle: &AppHandle) {
-    let _ = app_handle.run_on_main_thread(|| {
+    if let Err(e) = app_handle.run_on_main_thread(|| {
         use windows_sys::Win32::System::Power::{
             ES_CONTINUOUS, ES_SYSTEM_REQUIRED, SetThreadExecutionState,
         };
         unsafe {
-            SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED);
+            let result = SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED);
+            if result == 0 {
+                eprintln!(
+                    "[water-reminder] SetThreadExecutionState (activate) failed: returned 0."
+                );
+            }
         }
-    });
+    }) {
+        eprintln!("[water-reminder] activate_wake_lock: run_on_main_thread failed: {e}");
+    }
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -981,12 +998,19 @@ fn activate_wake_lock(_app_handle: &AppHandle) {}
 /// lock is currently held — it is effectively a no-op in that case.
 #[cfg(target_os = "windows")]
 fn deactivate_wake_lock(app_handle: &AppHandle) {
-    let _ = app_handle.run_on_main_thread(|| {
+    if let Err(e) = app_handle.run_on_main_thread(|| {
         use windows_sys::Win32::System::Power::{ES_CONTINUOUS, SetThreadExecutionState};
         unsafe {
-            SetThreadExecutionState(ES_CONTINUOUS);
+            let result = SetThreadExecutionState(ES_CONTINUOUS);
+            if result == 0 {
+                eprintln!(
+                    "[water-reminder] SetThreadExecutionState (deactivate) failed: returned 0."
+                );
+            }
         }
-    });
+    }) {
+        eprintln!("[water-reminder] deactivate_wake_lock: run_on_main_thread failed: {e}");
+    }
 }
 
 #[cfg(not(target_os = "windows"))]
