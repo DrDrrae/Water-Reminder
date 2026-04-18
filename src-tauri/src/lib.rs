@@ -277,12 +277,12 @@ fn sync_minimize_to_tray_state(app_handle: &AppHandle, minimize_to_tray: bool) {
             let hwnd_val = hwnd as usize;
             let _ = app_handle.run_on_main_thread(move || {
                 use windows_sys::Win32::UI::WindowsAndMessaging::{
-                    IsWindowVisible, ShowWindow, SW_SHOWNORMAL,
+                    IsWindowVisible, ShowWindow, SW_SHOWNA,
                 };
                 let hwnd = hwnd_val as windows_sys::Win32::Foundation::HWND;
                 unsafe {
                     if IsWindowVisible(hwnd) == 0 {
-                        ShowWindow(hwnd, SW_SHOWNORMAL);
+                        ShowWindow(hwnd, SW_SHOWNA);
                     }
                 }
             });
