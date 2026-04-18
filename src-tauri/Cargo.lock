@@ -4657,7 +4657,7 @@ dependencies = [
 
 [[package]]
 name = "water-reminder"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "raw-window-handle",
  "serde",
@@ -4667,7 +4667,6 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-notification",
  "tauri-plugin-store",
- "tauri-runtime",
  "windows",
  "windows-sys 0.61.2",
 ]

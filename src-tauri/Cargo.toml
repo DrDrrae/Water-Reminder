@@ -1,9 +1,10 @@
 [package]
 name = "water-reminder"
-version = "0.1.8"
+version = "0.1.9"
 description = "A configurable water reminder application built with Tauri v2"
 authors = []
-edition = "2021"
+edition = "2024"
+rust-version = "1.85"
 
 # The library crate exposes all application logic so that main.rs stays minimal.
 [lib]
@@ -17,9 +18,6 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 # Core Tauri framework
 tauri = { version = "2", features = ["tray-icon"] }
-
-# Public runtime types used by window attention APIs
-tauri-runtime = "2.10.1"
 
 # Desktop notification plugin
 tauri-plugin-notification = "2"
