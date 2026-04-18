@@ -107,7 +107,7 @@ Settings are stored in `settings.json` in `%APPDATA%\water-reminder\`.
 | UI framework | React 19.x + TypeScript 6.x |
 | Build tool | Vite 8.x |
 | Desktop shell | Tauri 2.10 |
-| Backend language | Rust 2021 edition |
+| Backend language | Rust 2024 edition |
 | Notifications plugin | tauri-plugin-notification 2.x |
 | Persistence plugin | tauri-plugin-store 2.x |
 | Serialization | serde / serde_json |
