@@ -1,6 +1,6 @@
 [package]
 name = "water-reminder"
-version = "0.1.6"
+version = "0.1.7"
 description = "A configurable water reminder application built with Tauri v2"
 authors = []
 edition = "2021"
@@ -40,6 +40,11 @@ windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_UI_WindowsAndMessaging",
     "Win32_System_Power",
+] }
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_UI_Shell",
 ] }
 
 # ── Release profile – smaller, faster binary ──────────────────────────────

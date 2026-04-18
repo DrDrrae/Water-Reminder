@@ -33,7 +33,7 @@ interface ReminderConfig {
   focus_window: boolean;
   /** When true, the taskbar / dock icon flashes when a reminder fires. */
   flash_taskbar: boolean;
-  /** When true, the window is minimized after acknowledging a pending reminder. */
+  /** When true, the window is minimized when starting and acknowledging reminders. */
   minimize_on_acknowledge: boolean;
   /** When true, the window is kept always on top while waiting for acknowledgment.
    *  Only has effect when focus_window is also true. */
@@ -389,13 +389,11 @@ function App() {
   // ---------------------------------------------------------------------------
   // Manage always-on-top state in the frontend.
   //
-  // We do this in TypeScript rather than from the Rust timer thread because
-  // the timer thread calls Win32 SetWindowPos with SWP_ASYNCWINDOWPOS (required
-  // for cross-thread calls), and bring_window_to_front posts TOPMOST then
-  // NOTOPMOST to the message queue.  Any Win32 call we make from the timer
-  // thread races with those queued messages.  By the time the TypeScript effect
-  // runs, all queued Win32 messages have long been processed, so our IPC call
-  // to setAlwaysOnTop wins cleanly.
+  // We do this in TypeScript so it follows the current React reminder state
+  // while the app is waiting for acknowledgement, instead of relying on the
+  // backend bring_window_to_front path for this behavior. This avoids making
+  // assumptions here about exactly when any run_on_main_thread work has
+  // completed relative to this effect.
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (remState.status !== "WaitingAck" || !formFocusWindow || !formAlwaysOnTopWhileWaiting) {
@@ -1008,7 +1006,7 @@ function App() {
                     checked={formThemePreference === "System"}
                     onChange={() => setFormThemePreference("System")}
                   />
-                  Follow system setting
+                  <span>Follow system setting</span>
                 </label>
                 <label className="radio-label">
                   <input
@@ -1017,7 +1015,7 @@ function App() {
                     checked={formThemePreference === "AlwaysLight"}
                     onChange={() => setFormThemePreference("AlwaysLight")}
                   />
-                  Always light
+                  <span>Always light</span>
                 </label>
                 <label className="radio-label">
                   <input
@@ -1026,7 +1024,7 @@ function App() {
                     checked={formThemePreference === "AlwaysDark"}
                     onChange={() => setFormThemePreference("AlwaysDark")}
                   />
-                  Always dark
+                  <span>Always dark</span>
                 </label>
               </div>
             </fieldset>
@@ -1114,7 +1112,7 @@ function App() {
                     checked={formMinimizeOnAcknowledge}
                     onChange={(e) => setFormMinimizeOnAcknowledge(e.target.checked)}
                   />
-                  <span>Minimize window to taskbar when acknowledging a reminder</span>
+                  <span>Minimize window to taskbar when starting or acknowledging reminders</span>
                 </label>
                 <label className="toggle-label">
                   <input
