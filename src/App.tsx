@@ -41,6 +41,9 @@ interface ReminderConfig {
   /** When true, the system is prevented from sleeping while a session is active.
    *  Windows only; no-op on other platforms. */
   keep_awake: boolean;
+  /** When true, minimizing or closing the window hides it to the system tray.
+   *  Windows only. */
+  minimize_to_tray: boolean;
 }
 
 /** Possible states of the reminder timer. */
@@ -125,6 +128,7 @@ const DEFAULT_CONFIG: ReminderConfig = {
   minimize_on_acknowledge: false,
   always_on_top_while_waiting: false,
   keep_awake: false,
+  minimize_to_tray: false,
 };
 
 /** Default state when the app first loads. */
@@ -170,6 +174,7 @@ function App() {
     DEFAULT_CONFIG.always_on_top_while_waiting,
   );
   const [formKeepAwake, setFormKeepAwake] = useState(DEFAULT_CONFIG.keep_awake);
+  const [formMinimizeToTray, setFormMinimizeToTray] = useState(DEFAULT_CONFIG.minimize_to_tray);
   const [systemPrefersDark, setSystemPrefersDark] = useState(getSystemPrefersDark);
 
   // Whether to show the snooze button prominently (set true after a reminder fires).
@@ -281,6 +286,7 @@ function App() {
         setFormMinimizeOnAcknowledge(snapshot.config.minimize_on_acknowledge);
         setFormAlwaysOnTopWhileWaiting(snapshot.config.always_on_top_while_waiting);
         setFormKeepAwake(snapshot.config.keep_awake);
+        setFormMinimizeToTray(snapshot.config.minimize_to_tray);
         // Mark the initial load as done so subsequent changes auto-save.
         isInitialLoadRef.current = false;
       })
@@ -316,6 +322,7 @@ function App() {
         minimize_on_acknowledge: formMinimizeOnAcknowledge,
         always_on_top_while_waiting: formAlwaysOnTopWhileWaiting,
         keep_awake: formKeepAwake,
+        minimize_to_tray: formMinimizeToTray,
       };
 
       // save_config validates, persists to disk, and updates the in-memory config.
@@ -345,6 +352,7 @@ function App() {
     formMinimizeOnAcknowledge,
     formAlwaysOnTopWhileWaiting,
     formKeepAwake,
+    formMinimizeToTray,
   ]);
 
   useEffect(() => {
@@ -576,6 +584,7 @@ function App() {
     minimize_on_acknowledge: formMinimizeOnAcknowledge,
     always_on_top_while_waiting: formAlwaysOnTopWhileWaiting,
     keep_awake: formKeepAwake,
+    minimize_to_tray: formMinimizeToTray,
   }), [
     formInterval,
     isInfinite,
@@ -591,6 +600,7 @@ function App() {
     formMinimizeOnAcknowledge,
     formAlwaysOnTopWhileWaiting,
     formKeepAwake,
+    formMinimizeToTray,
   ]);
 
   useEffect(() => {
@@ -1121,6 +1131,14 @@ function App() {
                     onChange={(e) => setFormKeepAwake(e.target.checked)}
                   />
                   <span>Prevent system sleep while session is active (Windows)</span>
+                </label>
+                <label className="toggle-label">
+                  <input
+                    type="checkbox"
+                    checked={formMinimizeToTray}
+                    onChange={(e) => setFormMinimizeToTray(e.target.checked)}
+                  />
+                  <span>Minimize to system tray instead of taskbar (Windows)</span>
                 </label>
               </div>
             </fieldset>

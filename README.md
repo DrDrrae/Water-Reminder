@@ -48,6 +48,7 @@ Settings are automatically saved to disk with a short debounce — nothing is lo
 | Taskbar flash | Flashes the Windows taskbar button to signal a pending reminder |
 | Acknowledge auto-minimize | Optionally minimizes the window when starting reminders and after `I Drank Water!` in `WaitingAck` |
 | Always-on-top while waiting | Keeps the window above all other windows during `WaitingAck`; requires *Focus window* to be enabled |
+| Minimize to system tray | Minimizes/closes the window to the Windows system tray (left-click icon to restore, right-click for menu); Windows only |
 | Prevent system sleep | Holds a Windows wake lock while the session is active so reminders fire even if the PC would otherwise sleep |
 | Virtual desktop aware | When a reminder fires and the app is on a different Windows virtual desktop, it is automatically moved to the active one |
 | Theme preference | Follow system, always light, or always dark |
@@ -88,6 +89,7 @@ Stopped → Running → (reminder fires) → WaitingAck ⟶ Running
 | Repeat sound until action | On | On / Off | Replays every 10 seconds while waiting for acknowledgment |
 | Focus window | On | On / Off | Brings window to front; on Windows this avoids stealing focus |
 | Always on top while waiting | Off | On / Off | Keeps the window above all others during `WaitingAck`; only available when *Focus window* is on |
+| Minimize to system tray | Off | On / Off | Minimizes or closes the window to the Windows system tray instead of the taskbar; left-click the tray icon to restore, right-click for menu; Windows only |
 | Prevent system sleep | Off | On / Off | Holds a Windows wake lock while the session is active (Running, Paused, or WaitingAck); Windows only |
 | Flash taskbar | On | On / Off | Flashes the Windows taskbar button on reminder |
 | Minimize on acknowledge | Off | On / Off | Minimizes the window when starting reminders and after acknowledging a pending reminder |
