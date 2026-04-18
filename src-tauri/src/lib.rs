@@ -599,11 +599,16 @@ fn reset_active_countdown(
         Instant::now() + Duration::from_secs(s.config.interval_minutes as u64 * 60),
     );
     s.remaining_when_paused = None;
+    let should_minimize = s.config.minimize_on_acknowledge;
 
     let snap = snapshot(&s);
     drop(s);
 
     stop_window_attention(&app_handle);
+
+    if should_minimize {
+        minimize_window(&app_handle);
+    }
 
     Ok(snap)
 }
