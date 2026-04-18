@@ -806,23 +806,10 @@ fn send_notification(app_handle: &AppHandle) {
     }
 }
 
-/// Surface the main application window so it is visible to the user.
-///
-/// On Windows we try to raise the window without stealing focus. Other
-/// platforms keep the existing focus-based behavior for now.
+/// Surface the main application window so it is visible to the user
+/// without stealing keyboard focus.
 fn bring_window_to_front(app_handle: &AppHandle) {
-    #[cfg(target_os = "windows")]
-    {
-        bring_window_to_front_without_focus_on_windows(app_handle);
-        return;
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    if let Some(win) = app_handle.get_webview_window("main") {
-        let _ = win.unminimize();
-        let _ = win.show();
-        let _ = win.set_focus();
-    }
+    bring_window_to_front_without_focus_on_windows(app_handle);
 }
 
 // ── Windows system-tray / minimize-intercept globals ─────────────────────────
@@ -1055,26 +1042,13 @@ fn bring_window_to_front_without_focus_on_windows(app_handle: &AppHandle) {
     }
 }
 
-/// Ask the OS to flash / bounce the taskbar or dock icon to attract the user's
-/// attention.
+/// Ask the OS to flash the taskbar button to attract the user's attention.
 ///
-/// On Windows we call `FlashWindowEx` directly to avoid a bug in tao where
+/// Calls `FlashWindowEx` directly to avoid a bug in tao where
 /// `request_user_attention` skips the call entirely when the window is already
-/// the active window.  On other platforms we delegate to Tauri's built-in API.
+/// the active window.
 fn flash_window_taskbar(app_handle: &AppHandle) {
-    #[cfg(target_os = "windows")]
-    {
-        flash_window_taskbar_windows(app_handle);
-        return;
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        use tauri_runtime::UserAttentionType;
-        if let Some(win) = app_handle.get_webview_window("main") {
-            let _ = win.request_user_attention(Some(UserAttentionType::Critical));
-        }
-    }
+    flash_window_taskbar_windows(app_handle);
 }
 
 /// Minimize the main window to the taskbar / dock.
@@ -1092,35 +1066,25 @@ fn minimize_window(app_handle: &AppHandle) {
 
 /// Restore the window from the system tray.
 ///
-/// On Windows we call Win32 directly (`ShowWindow` + `SetForegroundWindow`)
-/// so the call succeeds even if Tauri's internal visibility cache is out of
-/// sync with the OS state — which happens when the WndProc intercept hid the
-/// window via a raw `ShowWindow(SW_HIDE)` call that bypassed Tauri's API.
+/// Calls Win32 directly (`ShowWindow` + `SetForegroundWindow`) so the call
+/// succeeds even if Tauri's internal visibility cache is out of sync with
+/// the OS state — which happens when the WndProc intercept hid the window
+/// via a raw `ShowWindow(SW_HIDE)` call that bypassed Tauri's API.
 fn restore_window_from_tray(app_handle: &AppHandle) {
-    #[cfg(target_os = "windows")]
-    {
-        let Some(hwnd) = hwnd_from_main_window(app_handle) else {
-            return;
+    let Some(hwnd) = hwnd_from_main_window(app_handle) else {
+        return;
+    };
+    let hwnd_val = hwnd as usize;
+    let _ = app_handle.run_on_main_thread(move || {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            SetForegroundWindow, ShowWindow, SW_SHOW,
         };
-        let hwnd_val = hwnd as usize;
-        let _ = app_handle.run_on_main_thread(move || {
-            use windows_sys::Win32::UI::WindowsAndMessaging::{
-                SetForegroundWindow, ShowWindow, SW_SHOW,
-            };
-            let hwnd = hwnd_val as windows_sys::Win32::Foundation::HWND;
-            unsafe {
-                ShowWindow(hwnd, SW_SHOW);
-                SetForegroundWindow(hwnd);
-            }
-        });
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    if let Some(win) = app_handle.get_webview_window("main") {
-        let _ = win.show();
-        let _ = win.unminimize();
-        let _ = win.set_focus();
-    }
+        let hwnd = hwnd_val as windows_sys::Win32::Foundation::HWND;
+        unsafe {
+            ShowWindow(hwnd, SW_SHOW);
+            SetForegroundWindow(hwnd);
+        }
+    });
 }
 
 /// Stop any pending taskbar flash / dock-bounce that was started by a
@@ -1131,16 +1095,7 @@ fn restore_window_from_tray(app_handle: &AppHandle) {
 /// `FLASHW_STOP` from being sent when the app window is already active (which
 /// it typically is at the moment the user acknowledges a reminder).
 fn stop_window_attention(app_handle: &AppHandle) {
-    #[cfg(target_os = "windows")]
-    {
-        stop_window_attention_windows(app_handle);
-        return;
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    if let Some(win) = app_handle.get_webview_window("main") {
-        let _ = win.request_user_attention(None);
-    }
+    stop_window_attention_windows(app_handle);
 }
 
 /// Windows-specific: start flashing the taskbar button using the Windows API
@@ -1232,8 +1187,7 @@ fn activate_wake_lock(app_handle: &AppHandle) {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
-fn activate_wake_lock(_app_handle: &AppHandle) {}
+
 
 /// Release the wake lock previously acquired by `activate_wake_lock`.
 ///
@@ -1256,8 +1210,7 @@ fn deactivate_wake_lock(app_handle: &AppHandle) {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
-fn deactivate_wake_lock(_app_handle: &AppHandle) {}
+
 
 // ── Application entry point ───────────────────────────────────────────────────
 

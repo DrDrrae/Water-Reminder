@@ -18,9 +18,6 @@ tauri-build = { version = "2", features = [] }
 # Core Tauri framework
 tauri = { version = "2", features = ["tray-icon"] }
 
-# Public runtime types used by window attention APIs
-tauri-runtime = "2.10.1"
-
 # Desktop notification plugin
 tauri-plugin-notification = "2"
 
