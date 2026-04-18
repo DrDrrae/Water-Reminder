@@ -114,8 +114,8 @@ pub struct ReminderConfig {
     /// no-op on other platforms.
     #[serde(default)]
     pub keep_awake: bool,
-    /// When `true`, minimizing or closing the window hides it to the system
-    /// tray instead of minimizing to the taskbar / exiting.  Windows only.
+    /// When `true`, minimizing the window hides it to the system tray instead
+    /// of minimizing it to the taskbar. Windows only.
     #[serde(default)]
     pub minimize_to_tray: bool,
 }
@@ -263,6 +263,14 @@ fn persist_config(app_handle: &AppHandle, config: &ReminderConfig) {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn sync_minimize_to_tray_state(app_handle: &AppHandle, minimize_to_tray: bool) {
+    MINIMIZE_TO_TRAY.store(minimize_to_tray, std::sync::atomic::Ordering::Relaxed);
+    if let Some(tray) = app_handle.tray_by_id("main-tray") {
+        let _ = tray.set_visible(minimize_to_tray);
+    }
+}
+
 /// Try to load a previously saved `ReminderConfig` from the on-disk store.
 /// Returns `None` if no config has been saved yet or if it cannot be parsed.
 fn load_config(app_handle: &AppHandle) -> Option<ReminderConfig> {
@@ -355,10 +363,7 @@ fn save_config(
     // Keep the tray-icon visibility and atomic in sync with the new setting.
     #[cfg(target_os = "windows")]
     {
-        MINIMIZE_TO_TRAY.store(config.minimize_to_tray, std::sync::atomic::Ordering::Relaxed);
-        if let Some(tray) = app_handle.tray_by_id("main-tray") {
-            let _ = tray.set_visible(config.minimize_to_tray);
-        }
+        sync_minimize_to_tray_state(&app_handle, config.minimize_to_tray);
     }
 
     Ok(snap)
@@ -406,6 +411,11 @@ fn start_reminders(
 
     // Also persist the config that was just used to start a session.
     persist_config(&app_handle, &config);
+
+    #[cfg(target_os = "windows")]
+    {
+        sync_minimize_to_tray_state(&app_handle, config.minimize_to_tray);
+    }
 
     if config.keep_awake {
         activate_wake_lock(&app_handle);
@@ -885,6 +895,7 @@ unsafe extern "system" fn minimize_intercept_wndproc(
 #[cfg(target_os = "windows")]
 fn install_minimize_wndproc_hook(app_handle: &AppHandle) {
     use std::sync::atomic::Ordering;
+    use windows_sys::Win32::Foundation::{GetLastError, SetLastError};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         GWLP_WNDPROC, GetWindowLongPtrW, SetWindowLongPtrW,
     };
@@ -906,7 +917,15 @@ fn install_minimize_wndproc_hook(app_handle: &AppHandle) {
             return;
         }
         ORIGINAL_WNDPROC.store(orig, std::sync::atomic::Ordering::Relaxed);
-        SetWindowLongPtrW(hwnd, GWLP_WNDPROC, minimize_intercept_wndproc as *const () as isize);
+        SetLastError(0);
+        let prev = SetWindowLongPtrW(hwnd, GWLP_WNDPROC, minimize_intercept_wndproc as *const () as isize);
+        if prev == 0 {
+            let err = GetLastError();
+            if err != 0 {
+                ORIGINAL_WNDPROC.store(0, std::sync::atomic::Ordering::Relaxed);
+                eprintln!("[water-reminder] SetWindowLongPtrW failed; cannot install minimize hook (error code {err}).");
+            }
+        }
     }
 }
 
@@ -1298,7 +1317,7 @@ pub fn run() {
                 .unwrap_or(false);
 
             #[cfg(target_os = "windows")]
-            MINIMIZE_TO_TRAY.store(tray_visible, std::sync::atomic::Ordering::Relaxed);
+            sync_minimize_to_tray_state(app.handle(), tray_visible);
 
             {
                 use tauri::menu::{Menu, MenuItem};
@@ -1310,8 +1329,15 @@ pub fn run() {
                     MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
                 let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
 
+                let tray_icon = app.default_window_icon().cloned().ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        "default window icon not configured; cannot create tray icon",
+                    )
+                })?;
+
                 let tray = TrayIconBuilder::with_id("main-tray")
-                    .icon(app.default_window_icon().unwrap().clone())
+                    .icon(tray_icon)
                     .menu(&menu)
                     .tooltip("Water Reminder")
                     .show_menu_on_left_click(false)
@@ -1333,11 +1359,6 @@ pub fn run() {
                     .build(app)?;
 
                 tray.set_visible(tray_visible)?;
-                // Ensure the TrayIcon value (and its event handlers) are not
-                // dropped when this block exits.  Tauri holds its own Arc clone
-                // in its tray manager, but we keep ours as a safety net to
-                // guarantee the callbacks remain alive for the process lifetime.
-                std::mem::forget(tray);
             }
 
             // Install the WndProc hook that redirects OS minimize to tray.

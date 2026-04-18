@@ -41,7 +41,7 @@ interface ReminderConfig {
   /** When true, the system is prevented from sleeping while a session is active.
    *  Windows only; no-op on other platforms. */
   keep_awake: boolean;
-  /** When true, minimizing or closing the window hides it to the system tray.
+  /** When true, minimizing the window hides it to the system tray.
    *  Windows only. */
   minimize_to_tray: boolean;
 }
