@@ -140,13 +140,11 @@ cd Water-Reminder
 # 2. Install frontend dependencies
 npm install
 
-# 3. Build frontend
-npm run build
-
-# 4a. Run in development mode (hot reload, dev console)
+# 3a. Run in development mode (hot reload, dev console)
 npm run tauri dev
 
-# 4b. Build a release package
+# 3b. Build a release package
+npm run build
 npm run tauri build
 ```
 
