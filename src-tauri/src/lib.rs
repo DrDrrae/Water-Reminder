@@ -669,12 +669,13 @@ fn acknowledge_reminder(
     let snap = snapshot(&s);
     drop(s);
 
-    // Clear any pending taskbar-flash / user-attention request.
-    stop_window_attention(&app_handle);
-
     if should_minimize {
         minimize_window(&app_handle);
     }
+
+    // Clear any pending taskbar-flash / user-attention request after the
+    // window has been hidden/minimized, so tray mode doesn’t leave it visible.
+    stop_window_attention(&app_handle);
 
     Ok(snap)
 }
@@ -1043,8 +1044,8 @@ fn bring_window_to_front_without_focus_on_windows(app_handle: &AppHandle) {
     if let Err(e) = app_handle.run_on_main_thread(move || {
         use windows_sys::Win32::UI::WindowsAndMessaging::{
             HWND_NOTOPMOST, HWND_TOPMOST, IsWindowVisible,
-            SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW,
-            SW_SHOWNA, SW_SHOWNOACTIVATE, SetWindowPos, ShowWindow,
+            SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+            SW_SHOW, SW_SHOWNOACTIVATE, SetWindowPos, ShowWindow,
         };
         let hwnd = hwnd_val as windows_sys::Win32::Foundation::HWND;
 
@@ -1052,15 +1053,19 @@ fn bring_window_to_front_without_focus_on_windows(app_handle: &AppHandle) {
 
         unsafe {
             if IsWindowVisible(hwnd) == 0 {
-                // Window is fully hidden (e.g. in system tray); restore without
-                // activating to preserve "without focus" contract.
-                ShowWindow(hwnd, SW_SHOWNA);
+                // Window is fully hidden (e.g. in system tray).  Use SW_SHOW
+                // (which activates the window) rather than SW_SHOWNA so the
+                // window is reliably brought out of tray-hidden state.
+                ShowWindow(hwnd, SW_SHOW);
             } else {
                 // Window is visible or minimized; raise without stealing focus.
                 ShowWindow(hwnd, SW_SHOWNOACTIVATE);
             }
 
-            let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW;
+            // Do NOT include SWP_SHOWWINDOW here: the window was already made
+            // visible by ShowWindow above, and SWP_SHOWWINDOW in a later call
+            // would re-show the window even after a SW_HIDE.
+            let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
 
             if SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags) == 0 {
                 eprintln!("[water-reminder] Failed to raise reminder window to topmost.");
@@ -1094,10 +1099,12 @@ fn flash_window_taskbar(app_handle: &AppHandle) {
 /// elsewhere to restore the window, e.g. during `bring_window_to_front`).
 fn minimize_window(app_handle: &AppHandle) {
     let Some(hwnd) = hwnd_from_main_window(app_handle) else {
+        eprintln!("[water-reminder] minimize_window: hwnd_from_main_window returned None");
         return;
     };
     let hwnd_val = hwnd as usize;
     let use_tray = MINIMIZE_TO_TRAY.load(std::sync::atomic::Ordering::Relaxed);
+    eprintln!("[water-reminder] minimize_window: use_tray={use_tray}");
     if let Err(e) = app_handle.run_on_main_thread(move || {
         use windows_sys::Win32::UI::WindowsAndMessaging::{
             IsWindowVisible, ShowWindow, SW_HIDE, SW_MINIMIZE, SW_SHOWNORMAL,
@@ -1105,7 +1112,13 @@ fn minimize_window(app_handle: &AppHandle) {
         let hwnd = hwnd_val as windows_sys::Win32::Foundation::HWND;
         unsafe {
             if use_tray {
-                ShowWindow(hwnd, SW_HIDE);
+                let visible_before = IsWindowVisible(hwnd) != 0;
+                let ret = ShowWindow(hwnd, SW_HIDE);
+                let visible_after = IsWindowVisible(hwnd) != 0;
+                eprintln!(
+                    "[water-reminder] minimize_window(tray): visible_before={visible_before} \
+                     SW_HIDE_ret={ret} visible_after={visible_after}"
+                );
             } else {
                 if IsWindowVisible(hwnd) == 0 {
                     // Window is hidden (was previously in the tray); show at
@@ -1133,12 +1146,27 @@ fn restore_window_from_tray(app_handle: &AppHandle) {
     let hwnd_val = hwnd as usize;
     let _ = app_handle.run_on_main_thread(move || {
         use windows_sys::Win32::UI::WindowsAndMessaging::{
-            SetForegroundWindow, ShowWindow, SW_SHOW,
+            SetForegroundWindow, SetWindowPos, ShowWindow,
+            HWND_NOTOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SW_SHOW,
         };
         let hwnd = hwnd_val as windows_sys::Win32::Foundation::HWND;
         unsafe {
             ShowWindow(hwnd, SW_SHOW);
             SetForegroundWindow(hwnd);
+            // Clear any residual always-on-top state that may have been left
+            // when the window was hidden while WaitingAck.  The React cleanup
+            // for always_on_top_while_waiting skips setAlwaysOnTop(false) in
+            // tray+acknowledge mode to prevent tao from re-showing the window;
+            // we compensate here so the window is not topmost after restore.
+            SetWindowPos(
+                hwnd,
+                HWND_NOTOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            );
         }
     });
 }
