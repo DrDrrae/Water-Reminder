@@ -837,6 +837,7 @@ unsafe extern "system" fn minimize_intercept_wndproc(
     wparam: windows_sys::Win32::Foundation::WPARAM,
     lparam: windows_sys::Win32::Foundation::LPARAM,
 ) -> windows_sys::Win32::Foundation::LRESULT {
+    unsafe {
     use std::sync::atomic::Ordering;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         CallWindowProcW, GWLP_WNDPROC, SC_MINIMIZE, SW_HIDE, SetWindowLongPtrW, ShowWindow,
@@ -874,6 +875,7 @@ unsafe extern "system" fn minimize_intercept_wndproc(
     ) -> windows_sys::Win32::Foundation::LRESULT;
     let orig_fn: WndProcFn = std::mem::transmute(orig as usize);
     CallWindowProcW(Some(orig_fn), hwnd, msg, wparam, lparam)
+    }
 }
 
 /// Subclass the main window to intercept minimize requests.
