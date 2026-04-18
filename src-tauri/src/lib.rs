@@ -1039,7 +1039,7 @@ fn bring_window_to_front_without_focus_on_windows(app_handle: &AppHandle) {
         use windows_sys::Win32::UI::WindowsAndMessaging::{
             HWND_NOTOPMOST, HWND_TOPMOST, IsWindowVisible,
             SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW,
-            SW_SHOW, SW_SHOWNOACTIVATE, SetWindowPos, ShowWindow,
+            SW_SHOWNA, SW_SHOWNOACTIVATE, SetWindowPos, ShowWindow,
         };
         let hwnd = hwnd_val as windows_sys::Win32::Foundation::HWND;
 
@@ -1047,9 +1047,9 @@ fn bring_window_to_front_without_focus_on_windows(app_handle: &AppHandle) {
 
         unsafe {
             if IsWindowVisible(hwnd) == 0 {
-                // Window is fully hidden (e.g. in system tray); SW_SHOW reliably
-                // restores it where SW_SHOWNOACTIVATE may not.
-                ShowWindow(hwnd, SW_SHOW);
+                // Window is fully hidden (e.g. in system tray); restore without
+                // activating to preserve "without focus" contract.
+                ShowWindow(hwnd, SW_SHOWNA);
             } else {
                 // Window is visible or minimized; raise without stealing focus.
                 ShowWindow(hwnd, SW_SHOWNOACTIVATE);
