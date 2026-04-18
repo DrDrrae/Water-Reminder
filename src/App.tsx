@@ -389,11 +389,11 @@ function App() {
   // ---------------------------------------------------------------------------
   // Manage always-on-top state in the frontend.
   //
-  // We do this in TypeScript rather than from the Rust backend because by the
-  // time this effect runs (after reminder-fired is received and React has
-  // re-rendered), bring_window_to_front has already posted its run_on_main_thread
-  // closure and all synchronous SetWindowPos calls will have completed.  Our
-  // setAlwaysOnTop IPC call therefore wins cleanly.
+  // We do this in TypeScript so it follows the current React reminder state
+  // while the app is waiting for acknowledgement, instead of relying on the
+  // backend bring_window_to_front path for this behavior. This avoids making
+  // assumptions here about exactly when any run_on_main_thread work has
+  // completed relative to this effect.
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (remState.status !== "WaitingAck" || !formFocusWindow || !formAlwaysOnTopWhileWaiting) {
