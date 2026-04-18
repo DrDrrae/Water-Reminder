@@ -397,7 +397,11 @@ fn start_reminders(
         activate_wake_lock(&app_handle);
     }
 
-    spawn_timer_thread(Arc::clone(&*state), app_handle, my_gen);
+    spawn_timer_thread(Arc::clone(&*state), app_handle.clone(), my_gen);
+
+    if config.minimize_on_acknowledge {
+        minimize_window(&app_handle);
+    }
 
     Ok(snap)
 }
@@ -823,31 +827,103 @@ fn hwnd_from_main_window(app_handle: &AppHandle) -> Option<windows_sys::Win32::F
     }
 }
 
+/// Move the app window to the current active virtual desktop if it is on a
+/// different one.  Uses the documented `IVirtualDesktopManager` COM interface
+/// (Windows 10 1607+).
+///
+/// **Must be called from the main thread** — COM is already initialised there
+/// by the Tauri/WRY runtime, so no extra `CoInitializeEx` is needed.
+/// Silently no-ops on any failure (unsupported OS version, COM init, etc.).
 #[cfg(target_os = "windows")]
-fn bring_window_to_front_without_focus_on_windows(app_handle: &AppHandle) {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        HWND_NOTOPMOST, HWND_TOPMOST, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOMOVE,
-        SWP_NOSIZE, SWP_SHOWWINDOW, SW_SHOWNOACTIVATE, SetWindowPos, ShowWindow,
+fn move_to_current_virtual_desktop_main_thread(
+    hwnd_sys: windows_sys::Win32::Foundation::HWND,
+) {
+    use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
+    use windows::Win32::UI::Shell::IVirtualDesktopManager;
+    use windows::core::GUID;
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+
+    // CLSID_VirtualDesktopManager = {AA509086-5CA9-4C25-8F95-589D3C07B48A}
+    const CLSID_VDM: GUID = GUID {
+        data1: 0xAA509086,
+        data2: 0x5CA9,
+        data3: 0x4C25,
+        data4: [0x8F, 0x95, 0x58, 0x9D, 0x3C, 0x07, 0xB4, 0x8A],
     };
 
+    let main_hwnd = windows::Win32::Foundation::HWND(hwnd_sys);
+
+    unsafe {
+        let Ok(vdm): windows::core::Result<IVirtualDesktopManager> =
+            CoCreateInstance(&CLSID_VDM, None, CLSCTX_ALL)
+        else {
+            return;
+        };
+
+        // Already on current desktop? Nothing to do.
+        if let Ok(b) = vdm.IsWindowOnCurrentVirtualDesktop(main_hwnd) {
+            if b.as_bool() {
+                return;
+            }
+        }
+
+        // The foreground window is always on the active virtual desktop; use it
+        // to obtain the current desktop's GUID via the documented API.
+        let fg_hwnd_sys = GetForegroundWindow();
+        if fg_hwnd_sys.is_null() {
+            return;
+        }
+        let fg_hwnd = windows::Win32::Foundation::HWND(fg_hwnd_sys);
+
+        let Ok(desktop_id) = vdm.GetWindowDesktopId(fg_hwnd) else {
+            return;
+        };
+
+        // Move our window to the active desktop.
+        let _ = vdm.MoveWindowToDesktop(main_hwnd, &desktop_id);
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn bring_window_to_front_without_focus_on_windows(app_handle: &AppHandle) {
     let Some(hwnd) = hwnd_from_main_window(app_handle) else {
         return;
     };
 
-    unsafe {
-        ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+    // `HWND` is `*mut c_void` which is not `Send`.  Cast to `usize` for the
+    // closure and reconstruct inside — safe because we only use it as an opaque
+    // OS handle and the window outlives this call.
+    let hwnd_val = hwnd as usize;
 
-        let flags =
-            SWP_ASYNCWINDOWPOS | SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW;
+    // Run all window operations on the main thread so that:
+    //  1. The virtual-desktop move (COM) is guaranteed to complete first.
+    //  2. SetWindowPos can be called synchronously — SWP_ASYNCWINDOWPOS is
+    //     only required for cross-thread calls, not main-thread calls.
+    if let Err(e) = app_handle.run_on_main_thread(move || {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW,
+            SW_SHOWNOACTIVATE, SetWindowPos, ShowWindow,
+        };
+        let hwnd = hwnd_val as windows_sys::Win32::Foundation::HWND;
 
-        if SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags) == 0 {
-            eprintln!("[water-reminder] Failed to raise reminder window to topmost.");
-            return;
+        move_to_current_virtual_desktop_main_thread(hwnd);
+
+        unsafe {
+            ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+
+            let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW;
+
+            if SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags) == 0 {
+                eprintln!("[water-reminder] Failed to raise reminder window to topmost.");
+                return;
+            }
+
+            if SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, flags) == 0 {
+                eprintln!("[water-reminder] Failed to restore reminder window to non-topmost.");
+            }
         }
-
-        if SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, flags) == 0 {
-            eprintln!("[water-reminder] Failed to restore reminder window to non-topmost.");
-        }
+    }) {
+        eprintln!("[water-reminder] bring_window_to_front: run_on_main_thread failed: {e}");
     }
 }
 

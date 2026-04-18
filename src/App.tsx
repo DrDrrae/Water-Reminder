@@ -389,13 +389,11 @@ function App() {
   // ---------------------------------------------------------------------------
   // Manage always-on-top state in the frontend.
   //
-  // We do this in TypeScript rather than from the Rust timer thread because
-  // the timer thread calls Win32 SetWindowPos with SWP_ASYNCWINDOWPOS (required
-  // for cross-thread calls), and bring_window_to_front posts TOPMOST then
-  // NOTOPMOST to the message queue.  Any Win32 call we make from the timer
-  // thread races with those queued messages.  By the time the TypeScript effect
-  // runs, all queued Win32 messages have long been processed, so our IPC call
-  // to setAlwaysOnTop wins cleanly.
+  // We do this in TypeScript rather than from the Rust backend because by the
+  // time this effect runs (after reminder-fired is received and React has
+  // re-rendered), bring_window_to_front has already posted its run_on_main_thread
+  // closure and all synchronous SetWindowPos calls will have completed.  Our
+  // setAlwaysOnTop IPC call therefore wins cleanly.
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (remState.status !== "WaitingAck" || !formFocusWindow || !formAlwaysOnTopWhileWaiting) {
@@ -1008,7 +1006,7 @@ function App() {
                     checked={formThemePreference === "System"}
                     onChange={() => setFormThemePreference("System")}
                   />
-                  Follow system setting
+                  <span>Follow system setting</span>
                 </label>
                 <label className="radio-label">
                   <input
@@ -1017,7 +1015,7 @@ function App() {
                     checked={formThemePreference === "AlwaysLight"}
                     onChange={() => setFormThemePreference("AlwaysLight")}
                   />
-                  Always light
+                  <span>Always light</span>
                 </label>
                 <label className="radio-label">
                   <input
@@ -1026,7 +1024,7 @@ function App() {
                     checked={formThemePreference === "AlwaysDark"}
                     onChange={() => setFormThemePreference("AlwaysDark")}
                   />
-                  Always dark
+                  <span>Always dark</span>
                 </label>
               </div>
             </fieldset>

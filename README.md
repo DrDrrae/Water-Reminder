@@ -1,6 +1,8 @@
 # Water Reminder
 
-A lightweight, cross-platform desktop application that reminds you to drink water at configurable intervals. Built with [Tauri v2](https://tauri.app/) — the Rust backend handles all timer logic and OS integration while a React/TypeScript frontend provides the UI.
+A desktop application for Windows that reminds you to drink water at configurable intervals. Built with [Tauri v2](https://tauri.app/) — the Rust backend handles all timer logic and OS integration while a React/TypeScript frontend provides the UI.
+
+> **Platform support:** Water Reminder is developed and tested exclusively on **Windows**. While the Tauri framework is technically cross-platform, no testing is performed on macOS or Linux, bugs on those platforms will not be fixed, and new features will not be developed for them.
 
 ---
 
@@ -8,11 +10,11 @@ A lightweight, cross-platform desktop application that reminds you to drink wate
 
 Water Reminder sits quietly on your desktop and fires a periodic hydration reminder at whatever interval you choose (default: 60 minutes). When a reminder fires, it can:
 
-- Send a native OS desktop notification.
+- Send a Windows desktop notification.
 - Play a short alert tone synthesized in the browser audio engine (no external audio file needed).
 - Bring the app window to the foreground.
 - **Keep the window always on top** until you acknowledge or snooze (optional; requires *Bring window to front* to be enabled).
-- Flash the Windows taskbar or bounce the macOS dock icon.
+- Flash the Windows taskbar to attract attention.
 - Optionally minimize the app window to the taskbar after you acknowledge a reminder.
 - Pulse the entire app UI once per second until you acknowledge, snooze, or stop the reminder, darkening in light mode and brightening in dark mode.
 
@@ -24,13 +26,10 @@ Settings are automatically saved to disk with a short debounce — nothing is lo
 
 ---
 
-## ScreenShots
-
-### Windows
+## Screenshots
 
 <img width="602" height="887" alt="image" src="https://github.com/user-attachments/assets/a0ca9da2-2db8-48ad-9e7b-51dad1cf5425" />
 <img width="602" height="887" alt="image" src="https://github.com/user-attachments/assets/20c193ff-5941-499e-a288-b6ea42b44321" />
-
 
 ---
 
@@ -42,14 +41,15 @@ Settings are automatically saved to disk with a short debounce — nothing is lo
 | Max reminder count | 1 – 9 999, or unlimited |
 | Snooze | Delays the next reminder by 1 – 60 minutes |
 | Require acknowledgment | Blocks the timer until you confirm you drank water |
-| Desktop notification | OS-native (Windows, macOS, Linux) |
+| Desktop notification | Windows native notification via Windows Notification Center |
 | Alert sound | Synthesized 440 → 880 Hz tone; no audio file needed |
 | Repeating alert sound | Optional 10-second repeats until you acknowledge or snooze |
 | Window focus | Surfaces the app on reminder; on Windows it does not steal focus |
-| Taskbar / dock flash | Flashes taskbar (Windows) or bounces dock icon (macOS) |
+| Taskbar flash | Flashes the Windows taskbar button to signal a pending reminder |
 | Acknowledge auto-minimize | Optionally minimizes the window after `I Drank Water!` in `WaitingAck` |
 | Always-on-top while waiting | Keeps the window above all other windows during `WaitingAck`; requires *Focus window* to be enabled |
 | Prevent system sleep | Holds a Windows wake lock while the session is active so reminders fire even if the PC would otherwise sleep |
+| Virtual desktop aware | When a reminder fires and the app is on a different Windows virtual desktop, it is automatically moved to the active one |
 | Theme preference | Follow system, always light, or always dark |
 | Launch auto-start | Optionally starts a fresh reminder session automatically on app launch |
 | UI flash animation | Full-screen saturation + brightness pulse on every reminder; auto-clears when you acknowledge, snooze, or stop |
@@ -89,18 +89,12 @@ Stopped → Running → (reminder fires) → WaitingAck ⟶ Running
 | Focus window | On | On / Off | Brings window to front; on Windows this avoids stealing focus |
 | Always on top while waiting | Off | On / Off | Keeps the window above all others during `WaitingAck`; only available when *Focus window* is on |
 | Prevent system sleep | Off | On / Off | Holds a Windows wake lock while the session is active (Running, Paused, or WaitingAck); Windows only |
-| Flash taskbar | On | On / Off | Flashes taskbar / bounces dock icon on reminder |
+| Flash taskbar | On | On / Off | Flashes the Windows taskbar button on reminder |
 | Minimize on acknowledge | Off | On / Off | Minimizes the window after acknowledging a pending reminder |
 
 > **Note:** `Reminder interval`, `Max count`, and `Snooze duration` stay locked during active reminder sessions. `Theme`, `Auto-start on launch`, and notification behavior settings remain editable in `Running`, `Paused`, and `WaitingAck`, and apply immediately or on the next reminder event as appropriate.
 
-Settings are stored in `settings.json` in the platform app data directory:
-
-| Platform | Path |
-|---|---|
-| Windows | `%APPDATA%\water-reminder\` |
-| macOS | `~/Library/Application Support/com.waterreminder.desktop/` |
-| Linux | `~/.config/water-reminder/` |
+Settings are stored in `settings.json` in `%APPDATA%\water-reminder\`.
 
 ---
 
@@ -129,19 +123,10 @@ Settings are stored in `settings.json` in the platform app data directory:
 
 ## Prerequisites
 
-### All platforms
-
 - [Node.js](https://nodejs.org/) `^20.19.0 || >=22.12.0` (required by Vite 8; use the LTS v22 release or newer)
 - [Rust](https://www.rust-lang.org/tools/install) via `rustup`
-
-### Windows (additional)
-
 - [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) — usually pre-installed on Windows 11; may need manual install on Windows 10.
 - [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with the **Desktop development with C++** workload selected.
-
-### macOS (additional)
-
-- Xcode Command Line Tools (`xcode-select --install`)
 
 ---
 
@@ -155,10 +140,13 @@ cd Water-Reminder
 # 2. Install frontend dependencies
 npm install
 
-# 3a. Run in development mode (hot reload, dev console)
+# 3. Build frontend
+npm run build
+
+# 4a. Run in development mode (hot reload, dev console)
 npm run tauri dev
 
-# 3b. Build a release package
+# 4b. Build a release package
 npm run tauri build
 ```
 
@@ -176,9 +164,9 @@ The packaged installer is written to `src-tauri/target/release/bundle/`.
 
 ## Platform notes
 
-- **Windows** – taskbar flash uses the `Critical` attention type, which flashes both the window frame and the taskbar button until the app is focused. If **Focus window** is enabled, the app is also raised above other windows without taking keyboard focus. If **Always on top while waiting** is also enabled, the window stays above all other windows while `WaitingAck` is active and reverts to normal z-order once you acknowledge or snooze. If **Prevent system sleep** is enabled, a `SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)` wake lock is held on the main thread for the duration of the session, ensuring timers fire reliably even when the system would otherwise sleep.
-- **macOS** – dock bounce uses the `Critical` attention type (continuous bounce until focused); bundle identifier is `com.waterreminder.desktop`.
-- **Linux** – taskbar flash behaviour depends on the window manager (GNOME, KDE, i3, etc.) and is not guaranteed.
+> Water Reminder is developed and tested on **Windows only**. The notes below reflect observed behaviour on Windows. macOS and Linux are not tested, bugs on those platforms will not be investigated, and features will not be added for them.
+
+- **Windows** – taskbar flash uses the `Critical` attention type, which flashes both the window frame and the taskbar button until the app is focused. If **Focus window** is enabled, the app is also raised above other windows without taking keyboard focus. If the app window is on a different virtual desktop when a reminder fires, it is automatically moved to the currently active virtual desktop (requires Windows 10 1607 or later). If **Always on top while waiting** is also enabled, the window stays above all other windows while `WaitingAck` is active and reverts to normal z-order once you acknowledge or snooze. If **Prevent system sleep** is enabled, a `SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)` wake lock is held on the main thread for the duration of the session, ensuring timers fire reliably even when the system would otherwise sleep.
 - **Closing the app** – if the timer is `Stopped`, closing the window exits immediately. If a reminder session is active (`Running`, `Paused`, or `WaitingAck`), the app asks for confirmation before closing.
 - **Audio** – the alert tone uses the Web Audio API inside the WebView. It may be silenced by OS-level mute or by WebView autoplay restrictions in unusual configurations.
-- **Notifications** – delivered through the OS-native notification system on each platform (Windows Notification Center, macOS Notification Center, freedesktop D-Bus on Linux). The reminder still fires and the window still flashes even if notifications are blocked at the OS level.
+- **Notifications** – delivered through the Windows Notification Center. The reminder still fires and the window still flashes even if notifications are blocked at the OS level.

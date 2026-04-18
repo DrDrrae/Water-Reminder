@@ -436,10 +436,15 @@ body {
 .radio-label {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-size: 0.9rem;
   cursor: pointer;
 }
+
+.radio-label span {
+  padding-left: 0.5em;
+}
+
 fieldset:disabled .radio-label {
   opacity: 0.45;
   cursor: not-allowed;
@@ -665,7 +670,7 @@ fieldset:disabled .radio-label {
 .toggle-label {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 10px;
   font-size: 0.9rem;
   cursor: pointer;
 }
@@ -677,6 +682,10 @@ fieldset:disabled .radio-label {
   height: 16px;
   cursor: pointer;
   accent-color: var(--color-primary);
+}
+
+.toggle-label span {
+  padding-left: 0.5em;
 }
 
 fieldset:disabled .toggle-label {
