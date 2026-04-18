@@ -101,8 +101,8 @@ pub struct ReminderConfig {
     /// reminder.
     #[serde(default = "serde_default_true")]
     pub flash_taskbar: bool,
-    /// When `true`, the main window is minimized after the user acknowledges a
-    /// pending reminder.
+    /// When `true`, the main window is minimized when a reminder session starts
+    /// and after the user acknowledges a pending reminder.
     #[serde(default)]
     pub minimize_on_acknowledge: bool,
     /// When `true`, the window is kept always-on-top while the app is in the

@@ -15,7 +15,7 @@ Water Reminder sits quietly on your desktop and fires a periodic hydration remin
 - Bring the app window to the foreground.
 - **Keep the window always on top** until you acknowledge or snooze (optional; requires *Bring window to front* to be enabled).
 - Flash the Windows taskbar to attract attention.
-- Optionally minimize the app window to the taskbar after you acknowledge a reminder.
+- Optionally minimize the app window to the taskbar when a reminder session starts and after you acknowledge a reminder.
 - Pulse the entire app UI once per second until you acknowledge, snooze, or stop the reminder, darkening in light mode and brightening in dark mode.
 
 If you want to be honest about actually drinking water, enable **Require Acknowledgment**: the timer pauses after every reminder and only resumes once you click "I Drank Water!". You can also snooze a reminder to delay it by a configurable number of minutes.
@@ -46,7 +46,7 @@ Settings are automatically saved to disk with a short debounce — nothing is lo
 | Repeating alert sound | Optional 10-second repeats until you acknowledge or snooze |
 | Window focus | Surfaces the app on reminder; on Windows it does not steal focus |
 | Taskbar flash | Flashes the Windows taskbar button to signal a pending reminder |
-| Acknowledge auto-minimize | Optionally minimizes the window after `I Drank Water!` in `WaitingAck` |
+| Acknowledge auto-minimize | Optionally minimizes the window when starting reminders and after `I Drank Water!` in `WaitingAck` |
 | Always-on-top while waiting | Keeps the window above all other windows during `WaitingAck`; requires *Focus window* to be enabled |
 | Prevent system sleep | Holds a Windows wake lock while the session is active so reminders fire even if the PC would otherwise sleep |
 | Virtual desktop aware | When a reminder fires and the app is on a different Windows virtual desktop, it is automatically moved to the active one |
@@ -90,7 +90,7 @@ Stopped → Running → (reminder fires) → WaitingAck ⟶ Running
 | Always on top while waiting | Off | On / Off | Keeps the window above all others during `WaitingAck`; only available when *Focus window* is on |
 | Prevent system sleep | Off | On / Off | Holds a Windows wake lock while the session is active (Running, Paused, or WaitingAck); Windows only |
 | Flash taskbar | On | On / Off | Flashes the Windows taskbar button on reminder |
-| Minimize on acknowledge | Off | On / Off | Minimizes the window after acknowledging a pending reminder |
+| Minimize on acknowledge | Off | On / Off | Minimizes the window when starting reminders and after acknowledging a pending reminder |
 
 > **Note:** `Reminder interval`, `Max count`, and `Snooze duration` stay locked during active reminder sessions. `Theme`, `Auto-start on launch`, and notification behavior settings remain editable in `Running`, `Paused`, and `WaitingAck`, and apply immediately or on the next reminder event as appropriate.
 

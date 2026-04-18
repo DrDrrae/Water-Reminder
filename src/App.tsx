@@ -33,7 +33,7 @@ interface ReminderConfig {
   focus_window: boolean;
   /** When true, the taskbar / dock icon flashes when a reminder fires. */
   flash_taskbar: boolean;
-  /** When true, the window is minimized after acknowledging a pending reminder. */
+  /** When true, the window is minimized when starting and acknowledging reminders. */
   minimize_on_acknowledge: boolean;
   /** When true, the window is kept always on top while waiting for acknowledgment.
    *  Only has effect when focus_window is also true. */
@@ -1112,7 +1112,7 @@ function App() {
                     checked={formMinimizeOnAcknowledge}
                     onChange={(e) => setFormMinimizeOnAcknowledge(e.target.checked)}
                   />
-                  <span>Minimize window to taskbar when acknowledging a reminder</span>
+                  <span>Minimize window to taskbar when starting or acknowledging reminders</span>
                 </label>
                 <label className="toggle-label">
                   <input
