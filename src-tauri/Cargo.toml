@@ -3,7 +3,7 @@ name = "water-reminder"
 version = "0.1.9"
 description = "A configurable water reminder application built with Tauri v2"
 authors = []
-edition = "2021"
+edition = "2024"
 
 # The library crate exposes all application logic so that main.rs stays minimal.
 [lib]
