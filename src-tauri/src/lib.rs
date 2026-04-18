@@ -265,9 +265,28 @@ fn persist_config(app_handle: &AppHandle, config: &ReminderConfig) {
 
 #[cfg(target_os = "windows")]
 fn sync_minimize_to_tray_state(app_handle: &AppHandle, minimize_to_tray: bool) {
-    MINIMIZE_TO_TRAY.store(minimize_to_tray, std::sync::atomic::Ordering::Relaxed);
+    let was_tray = MINIMIZE_TO_TRAY.swap(minimize_to_tray, std::sync::atomic::Ordering::Relaxed);
     if let Some(tray) = app_handle.tray_by_id("main-tray") {
         let _ = tray.set_visible(minimize_to_tray);
+    }
+    // When the tray feature is turned off while the window might still be
+    // hidden, restore it so the user is not left with an invisible window
+    // and no tray affordance to bring it back.
+    if was_tray && !minimize_to_tray {
+        if let Some(hwnd) = hwnd_from_main_window(app_handle) {
+            let hwnd_val = hwnd as usize;
+            let _ = app_handle.run_on_main_thread(move || {
+                use windows_sys::Win32::UI::WindowsAndMessaging::{
+                    IsWindowVisible, ShowWindow, SW_SHOWNA,
+                };
+                let hwnd = hwnd_val as windows_sys::Win32::Foundation::HWND;
+                unsafe {
+                    if IsWindowVisible(hwnd) == 0 {
+                        ShowWindow(hwnd, SW_SHOWNA);
+                    }
+                }
+            });
+        }
     }
 }
 
@@ -1018,15 +1037,23 @@ fn bring_window_to_front_without_focus_on_windows(app_handle: &AppHandle) {
     //     only required for cross-thread calls, not main-thread calls.
     if let Err(e) = app_handle.run_on_main_thread(move || {
         use windows_sys::Win32::UI::WindowsAndMessaging::{
-            HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW,
-            SW_SHOWNOACTIVATE, SetWindowPos, ShowWindow,
+            HWND_NOTOPMOST, HWND_TOPMOST, IsWindowVisible,
+            SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW,
+            SW_SHOWNA, SW_SHOWNOACTIVATE, SetWindowPos, ShowWindow,
         };
         let hwnd = hwnd_val as windows_sys::Win32::Foundation::HWND;
 
         move_to_current_virtual_desktop_main_thread(hwnd);
 
         unsafe {
-            ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+            if IsWindowVisible(hwnd) == 0 {
+                // Window is fully hidden (e.g. in system tray); restore without
+                // activating to preserve "without focus" contract.
+                ShowWindow(hwnd, SW_SHOWNA);
+            } else {
+                // Window is visible or minimized; raise without stealing focus.
+                ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+            }
 
             let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW;
 
@@ -1055,14 +1082,36 @@ fn flash_window_taskbar(app_handle: &AppHandle) {
 
 /// Minimize the main window to the taskbar / dock.
 /// When "minimize to tray" is active on Windows, hides to the tray instead.
+///
+/// Uses Win32 directly rather than the Tauri WebviewWindow API so that hide
+/// and show operations remain consistent regardless of Tauri's internal
+/// visibility cache (which can fall out of sync when Win32 calls are used
+/// elsewhere to restore the window, e.g. during `bring_window_to_front`).
 fn minimize_window(app_handle: &AppHandle) {
-    if let Some(win) = app_handle.get_webview_window("main") {
-        #[cfg(target_os = "windows")]
-        if MINIMIZE_TO_TRAY.load(std::sync::atomic::Ordering::Relaxed) {
-            let _ = win.hide();
-            return;
+    let Some(hwnd) = hwnd_from_main_window(app_handle) else {
+        return;
+    };
+    let hwnd_val = hwnd as usize;
+    let use_tray = MINIMIZE_TO_TRAY.load(std::sync::atomic::Ordering::Relaxed);
+    if let Err(e) = app_handle.run_on_main_thread(move || {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            IsWindowVisible, ShowWindow, SW_HIDE, SW_MINIMIZE, SW_SHOWNORMAL,
+        };
+        let hwnd = hwnd_val as windows_sys::Win32::Foundation::HWND;
+        unsafe {
+            if use_tray {
+                ShowWindow(hwnd, SW_HIDE);
+            } else {
+                if IsWindowVisible(hwnd) == 0 {
+                    // Window is hidden (was previously in the tray); show at
+                    // normal size first so SW_MINIMIZE can place it on the taskbar.
+                    ShowWindow(hwnd, SW_SHOWNORMAL);
+                }
+                ShowWindow(hwnd, SW_MINIMIZE);
+            }
         }
-        let _ = win.minimize();
+    }) {
+        eprintln!("[water-reminder] minimize_window: run_on_main_thread failed: {e}");
     }
 }
 
