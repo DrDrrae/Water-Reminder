@@ -114,6 +114,10 @@ pub struct ReminderConfig {
     /// no-op on other platforms.
     #[serde(default)]
     pub keep_awake: bool,
+    /// When `true`, minimizing the window hides it to the system tray instead
+    /// of minimizing it to the taskbar. Windows only.
+    #[serde(default)]
+    pub minimize_to_tray: bool,
 }
 
 impl Default for ReminderConfig {
@@ -132,6 +136,7 @@ impl Default for ReminderConfig {
             minimize_on_acknowledge: false,
             always_on_top_while_waiting: false,
             keep_awake: false,
+            minimize_to_tray: false,
         }
     }
 }
@@ -258,6 +263,14 @@ fn persist_config(app_handle: &AppHandle, config: &ReminderConfig) {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn sync_minimize_to_tray_state(app_handle: &AppHandle, minimize_to_tray: bool) {
+    MINIMIZE_TO_TRAY.store(minimize_to_tray, std::sync::atomic::Ordering::Relaxed);
+    if let Some(tray) = app_handle.tray_by_id("main-tray") {
+        let _ = tray.set_visible(minimize_to_tray);
+    }
+}
+
 /// Try to load a previously saved `ReminderConfig` from the on-disk store.
 /// Returns `None` if no config has been saved yet or if it cannot be parsed.
 fn load_config(app_handle: &AppHandle) -> Option<ReminderConfig> {
@@ -347,6 +360,12 @@ fn save_config(
     // Write to disk (errors are logged, not propagated).
     persist_config(&app_handle, &config);
 
+    // Keep the tray-icon visibility and atomic in sync with the new setting.
+    #[cfg(target_os = "windows")]
+    {
+        sync_minimize_to_tray_state(&app_handle, config.minimize_to_tray);
+    }
+
     Ok(snap)
 }
 
@@ -392,6 +411,11 @@ fn start_reminders(
 
     // Also persist the config that was just used to start a session.
     persist_config(&app_handle, &config);
+
+    #[cfg(target_os = "windows")]
+    {
+        sync_minimize_to_tray_state(&app_handle, config.minimize_to_tray);
+    }
 
     if config.keep_awake {
         activate_wake_lock(&app_handle);
@@ -801,6 +825,110 @@ fn bring_window_to_front(app_handle: &AppHandle) {
     }
 }
 
+// ── Windows system-tray / minimize-intercept globals ─────────────────────────
+
+/// Set to `true` while the user has enabled the "minimize to tray" option.
+/// Read from the WndProc callback and from `minimize_window`, both of which
+/// cannot take normal Rust parameters at their call sites.
+#[cfg(target_os = "windows")]
+static MINIMIZE_TO_TRAY: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// The original window procedure, saved so the subclassed proc can forward
+/// unhandled messages correctly and restore it on `WM_NCDESTROY`.
+#[cfg(target_os = "windows")]
+static ORIGINAL_WNDPROC: std::sync::atomic::AtomicIsize =
+    std::sync::atomic::AtomicIsize::new(0);
+
+/// Window procedure that intercepts `WM_SYSCOMMAND / SC_MINIMIZE` when
+/// "minimize to tray" is active and hides the window instead of minimizing it.
+/// All other messages are forwarded to the original proc.
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn minimize_intercept_wndproc(
+    hwnd: windows_sys::Win32::Foundation::HWND,
+    msg: u32,
+    wparam: windows_sys::Win32::Foundation::WPARAM,
+    lparam: windows_sys::Win32::Foundation::LPARAM,
+) -> windows_sys::Win32::Foundation::LRESULT {
+    use std::sync::atomic::Ordering;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        CallWindowProcW, GWLP_WNDPROC, SC_MINIMIZE, SW_HIDE, SetWindowLongPtrW, ShowWindow,
+        WM_NCDESTROY, WM_SYSCOMMAND,
+    };
+
+    if msg == WM_SYSCOMMAND && (wparam & 0xFFF0) == SC_MINIMIZE as usize {
+        if MINIMIZE_TO_TRAY.load(Ordering::Relaxed) {
+            ShowWindow(hwnd, SW_HIDE);
+            return 0;
+        }
+    }
+
+    // Restore the original WndProc before the window is destroyed so that
+    // we leave no dangling subclass reference behind.
+    if msg == WM_NCDESTROY {
+        let orig = ORIGINAL_WNDPROC.load(Ordering::Relaxed);
+        if orig != 0 {
+            SetWindowLongPtrW(hwnd, GWLP_WNDPROC, orig);
+        }
+    }
+
+    let orig = ORIGINAL_WNDPROC.load(Ordering::Relaxed);
+    if orig == 0 {
+        return 0; // Safety fallback; should never reach here in normal use.
+    }
+
+    // Safety: `orig` holds the function pointer that was stored by
+    // `install_minimize_wndproc_hook`.  Its type matches the WNDPROC signature.
+    type WndProcFn = unsafe extern "system" fn(
+        windows_sys::Win32::Foundation::HWND,
+        u32,
+        windows_sys::Win32::Foundation::WPARAM,
+        windows_sys::Win32::Foundation::LPARAM,
+    ) -> windows_sys::Win32::Foundation::LRESULT;
+    let orig_fn: WndProcFn = std::mem::transmute(orig as usize);
+    CallWindowProcW(Some(orig_fn), hwnd, msg, wparam, lparam)
+}
+
+/// Subclass the main window to intercept minimize requests.
+/// Safe to call only once; subsequent calls are no-ops (guarded by
+/// `ORIGINAL_WNDPROC`).
+#[cfg(target_os = "windows")]
+fn install_minimize_wndproc_hook(app_handle: &AppHandle) {
+    use std::sync::atomic::Ordering;
+    use windows_sys::Win32::Foundation::{GetLastError, SetLastError};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GWLP_WNDPROC, GetWindowLongPtrW, SetWindowLongPtrW,
+    };
+
+    // Guard against double-install.
+    if ORIGINAL_WNDPROC.load(Ordering::Relaxed) != 0 {
+        return;
+    }
+
+    let Some(hwnd) = hwnd_from_main_window(app_handle) else {
+        eprintln!("[water-reminder] Could not get HWND; OS minimize button will not redirect to tray.");
+        return;
+    };
+
+    unsafe {
+        let orig = GetWindowLongPtrW(hwnd, GWLP_WNDPROC);
+        if orig == 0 {
+            eprintln!("[water-reminder] GetWindowLongPtrW returned 0; cannot install minimize hook.");
+            return;
+        }
+        ORIGINAL_WNDPROC.store(orig, std::sync::atomic::Ordering::Relaxed);
+        SetLastError(0);
+        let prev = SetWindowLongPtrW(hwnd, GWLP_WNDPROC, minimize_intercept_wndproc as *const () as isize);
+        if prev == 0 {
+            let err = GetLastError();
+            if err != 0 {
+                ORIGINAL_WNDPROC.store(0, std::sync::atomic::Ordering::Relaxed);
+                eprintln!("[water-reminder] SetWindowLongPtrW failed; cannot install minimize hook (error code {err}).");
+            }
+        }
+    }
+}
+
 #[cfg(target_os = "windows")]
 fn hwnd_from_main_window(app_handle: &AppHandle) -> Option<windows_sys::Win32::Foundation::HWND> {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -950,9 +1078,48 @@ fn flash_window_taskbar(app_handle: &AppHandle) {
 }
 
 /// Minimize the main window to the taskbar / dock.
+/// When "minimize to tray" is active on Windows, hides to the tray instead.
 fn minimize_window(app_handle: &AppHandle) {
     if let Some(win) = app_handle.get_webview_window("main") {
+        #[cfg(target_os = "windows")]
+        if MINIMIZE_TO_TRAY.load(std::sync::atomic::Ordering::Relaxed) {
+            let _ = win.hide();
+            return;
+        }
         let _ = win.minimize();
+    }
+}
+
+/// Restore the window from the system tray.
+///
+/// On Windows we call Win32 directly (`ShowWindow` + `SetForegroundWindow`)
+/// so the call succeeds even if Tauri's internal visibility cache is out of
+/// sync with the OS state — which happens when the WndProc intercept hid the
+/// window via a raw `ShowWindow(SW_HIDE)` call that bypassed Tauri's API.
+fn restore_window_from_tray(app_handle: &AppHandle) {
+    #[cfg(target_os = "windows")]
+    {
+        let Some(hwnd) = hwnd_from_main_window(app_handle) else {
+            return;
+        };
+        let hwnd_val = hwnd as usize;
+        let _ = app_handle.run_on_main_thread(move || {
+            use windows_sys::Win32::UI::WindowsAndMessaging::{
+                SetForegroundWindow, ShowWindow, SW_SHOW,
+            };
+            let hwnd = hwnd_val as windows_sys::Win32::Foundation::HWND;
+            unsafe {
+                ShowWindow(hwnd, SW_SHOW);
+                SetForegroundWindow(hwnd);
+            }
+        });
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    if let Some(win) = app_handle.get_webview_window("main") {
+        let _ = win.show();
+        let _ = win.unminimize();
+        let _ = win.set_focus();
     }
 }
 
@@ -1112,13 +1279,14 @@ pub fn run() {
         // `get_status` returns the correct settings from the very first call,
         // and optionally auto-start a fresh reminder session.
         .setup(|app| {
+            let mut auto_start_generation: Option<u64> = None;
+            let mut auto_start_keep_awake = false;
+            let mut auto_start_minimize = false;
+
             if let Some(saved_config) = load_config(app.handle()) {
                 // Validate the stored config before applying it; if it is
                 // somehow corrupt we simply keep the built-in defaults.
                 if validate_config(&saved_config).is_ok() {
-                    let mut auto_start_generation = None;
-                    let mut auto_start_keep_awake = false;
-
                     if let Ok(mut s) = app.state::<SharedState>().lock() {
                         s.config = saved_config;
 
@@ -1133,33 +1301,87 @@ pub fn run() {
                             s.thread_generation += 1;
                             auto_start_generation = Some(s.thread_generation);
                             auto_start_keep_awake = s.config.keep_awake;
-                        }
-                    }
-
-                    if let Some(my_gen) = auto_start_generation {
-                        let shared_state = app.state::<SharedState>();
-                        spawn_timer_thread(Arc::clone(&*shared_state), app.handle().clone(), my_gen);
-                        if auto_start_keep_awake {
-                            activate_wake_lock(app.handle());
-                        }
-                    }
-
-                    // When both auto-start and minimize-on-acknowledge are
-                    // enabled the user intends to run the app silently in the
-                    // background, so start with the window already minimized.
-                    let start_minimized = app
-                        .state::<SharedState>()
-                        .lock()
-                        .map(|s| s.config.auto_start && s.config.minimize_on_acknowledge)
-                        .unwrap_or(false);
-
-                    if start_minimized {
-                        if let Some(win) = app.get_webview_window("main") {
-                            let _ = win.minimize();
+                            auto_start_minimize = s.config.minimize_on_acknowledge;
                         }
                     }
                 }
             }
+
+            // ── Tray icon and minimize hook ────────────────────────────────
+            // Always run regardless of whether a saved config exists so that
+            // the tray is available and the hook is installed from the start.
+            let tray_visible = app
+                .state::<SharedState>()
+                .lock()
+                .map(|s| s.config.minimize_to_tray)
+                .unwrap_or(false);
+
+            #[cfg(target_os = "windows")]
+            sync_minimize_to_tray_state(app.handle(), tray_visible);
+
+            {
+                use tauri::menu::{Menu, MenuItem};
+                use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+
+                let show_item =
+                    MenuItem::with_id(app, "show", "Show Water Reminder", true, None::<&str>)?;
+                let quit_item =
+                    MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+                let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+
+                let tray_icon = app.default_window_icon().cloned().ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        "default window icon not configured; cannot create tray icon",
+                    )
+                })?;
+
+                let tray = TrayIconBuilder::with_id("main-tray")
+                    .icon(tray_icon)
+                    .menu(&menu)
+                    .tooltip("Water Reminder")
+                    .show_menu_on_left_click(false)
+                    .on_menu_event(|app, event| match event.id.as_ref() {
+                        "show" => restore_window_from_tray(app),
+                        "quit" => app.exit(0),
+                        _ => {}
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        if let TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            restore_window_from_tray(tray.app_handle());
+                        }
+                    })
+                    .build(app)?;
+
+                tray.set_visible(tray_visible)?;
+            }
+
+            // Install the WndProc hook that redirects OS minimize to tray.
+            #[cfg(target_os = "windows")]
+            install_minimize_wndproc_hook(app.handle());
+
+            // ── Auto-start ────────────────────────────────────────────────
+            if let Some(my_gen) = auto_start_generation {
+                let shared_state = app.state::<SharedState>();
+                spawn_timer_thread(Arc::clone(&*shared_state), app.handle().clone(), my_gen);
+                if auto_start_keep_awake {
+                    activate_wake_lock(app.handle());
+                }
+            }
+
+            // When both auto-start and minimize-on-acknowledge are enabled the
+            // user intends to run the app silently in the background, so start
+            // with the window already minimized (or hidden to tray when that
+            // setting is also on, since minimize_window respects MINIMIZE_TO_TRAY).
+            if auto_start_minimize {
+                minimize_window(app.handle());
+            }
+
             Ok(())
         })
         // Register all IPC commands exposed to the frontend.

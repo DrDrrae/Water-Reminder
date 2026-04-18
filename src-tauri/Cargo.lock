@@ -4657,7 +4657,7 @@ dependencies = [
 
 [[package]]
 name = "water-reminder"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "raw-window-handle",
  "serde",
