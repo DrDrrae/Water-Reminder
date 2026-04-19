@@ -308,7 +308,7 @@ fn sync_pause_on_lock_state(enabled: bool) {
 fn auto_pause_for_lock(state: &SharedState, app_handle: &AppHandle) {
     use std::sync::atomic::Ordering;
 
-    if !SESSION_IS_LOCKED.load(Ordering::Relaxed) {
+    if !SESSION_IS_LOCKED.load(Ordering::Acquire) {
         return;
     }
 
@@ -331,7 +331,7 @@ fn auto_pause_for_lock(state: &SharedState, app_handle: &AppHandle) {
         s.next_fire_at = None;
         // Bump generation so the timer thread exits cleanly.
         s.thread_generation += 1;
-        AUTO_PAUSED_BY_LOCK.store(true, Ordering::Relaxed);
+        AUTO_PAUSED_BY_LOCK.store(true, Ordering::Release);
         snapshot(&s)
     };
 
@@ -359,15 +359,15 @@ fn auto_resume_from_lock(state: &SharedState, app_handle: &AppHandle) {
                 return;
             }
         };
-        if SESSION_IS_LOCKED.load(Ordering::Relaxed) {
+        if SESSION_IS_LOCKED.load(Ordering::Acquire) {
             return;
         }
-        if !AUTO_PAUSED_BY_LOCK.load(Ordering::Relaxed) {
+        if AUTO_PAUSED_BY_LOCK
+            .compare_exchange(true, false, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
             return;
         }
-        // Clear the flag regardless of whether we resume, so stale flags do
-        // not cause unexpected resumes on a future unlock cycle.
-        AUTO_PAUSED_BY_LOCK.store(false, Ordering::Relaxed);
         if s.status != ReminderStatus::Paused {
             return;
         }
@@ -1022,7 +1022,7 @@ unsafe extern "system" fn minimize_intercept_wndproc(
         const WTS_SESSION_UNLOCK: usize = 8;
         if msg == WM_WTSSESSION_CHANGE {
             if wparam == WTS_SESSION_LOCK && AUTO_PAUSE_ON_LOCK_ENABLED.load(Ordering::Relaxed) {
-                SESSION_IS_LOCKED.store(true, Ordering::Relaxed);
+                SESSION_IS_LOCKED.store(true, Ordering::Release);
                 if let (Some(handle), Some(state)) =
                     (GLOBAL_APP_HANDLE.get(), GLOBAL_SHARED_STATE.get())
                 {
@@ -1032,7 +1032,7 @@ unsafe extern "system" fn minimize_intercept_wndproc(
                     std::thread::spawn(move || auto_pause_for_lock(&state, &handle));
                 }
             } else if wparam == WTS_SESSION_UNLOCK {
-                SESSION_IS_LOCKED.store(false, Ordering::Relaxed);
+                SESSION_IS_LOCKED.store(false, Ordering::Release);
                 if let (Some(handle), Some(state)) =
                     (GLOBAL_APP_HANDLE.get(), GLOBAL_SHARED_STATE.get())
                 {
