@@ -51,6 +51,7 @@ Settings are automatically saved to disk with a short debounce — nothing is lo
 | Minimize to system tray | Minimizes the window to the Windows system tray (left-click icon to restore, right-click for menu); Windows only |
 | Prevent system sleep | Holds a Windows wake lock while the session is active so reminders fire even if the PC would otherwise sleep |
 | Virtual desktop aware | When a reminder fires and the app is on a different Windows virtual desktop, it is automatically moved to the active one |
+| Auto-pause on lock | Automatically pauses the timer when the Windows session is locked; resumes on unlock (Windows only) |
 | Theme preference | Follow system, always light, or always dark |
 | Launch auto-start | Optionally starts a fresh reminder session automatically on app launch |
 | UI flash animation | Full-screen saturation + brightness pulse on every reminder; auto-clears when you acknowledge, snooze, or stop |
@@ -93,6 +94,7 @@ Stopped → Running → (reminder fires) → WaitingAck ⟶ Running
 | Prevent system sleep | Off | On / Off | Holds a Windows wake lock while the session is active (Running, Paused, or WaitingAck); Windows only |
 | Flash taskbar | On | On / Off | Flashes the Windows taskbar button on reminder |
 | Minimize on acknowledge | Off | On / Off | Minimizes the window when starting reminders and after acknowledging a pending reminder |
+| Pause on lock | Off | On / Off | Automatically pauses the timer when the Windows session is locked; auto-resumes on unlock (only resumes if the timer was paused by a lock event, not by a manual pause); Windows only |
 
 > **Note:** `Reminder interval`, `Max count`, and `Snooze duration` stay locked during active reminder sessions. `Theme`, `Auto-start on launch`, and notification behavior settings remain editable in `Running`, `Paused`, and `WaitingAck`, and apply immediately or on the next reminder event as appropriate.
 
@@ -166,7 +168,7 @@ The packaged installer is written to `src-tauri/target/release/bundle/`.
 
 > Water Reminder is developed and tested on **Windows only**. The notes below reflect observed behaviour on Windows. macOS and Linux are not tested, bugs on those platforms will not be investigated, and features will not be added for them.
 
-- **Windows** – taskbar flash uses the `Critical` attention type, which flashes both the window frame and the taskbar button until the app is focused. If **Focus window** is enabled, the app is also raised above other windows without taking keyboard focus. If the app window is on a different virtual desktop when a reminder fires, it is automatically moved to the currently active virtual desktop (requires Windows 10 1607 or later). If **Always on top while waiting** is also enabled, the window stays above all other windows while `WaitingAck` is active and reverts to normal z-order once you acknowledge or snooze. If **Prevent system sleep** is enabled, a `SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)` wake lock is held on the main thread for the duration of the session, ensuring timers fire reliably even when the system would otherwise sleep.
+- **Windows** – taskbar flash uses the `Critical` attention type, which flashes both the window frame and the taskbar button until the app is focused. If **Focus window** is enabled, the app is also raised above other windows without taking keyboard focus. If the app window is on a different virtual desktop when a reminder fires, it is automatically moved to the currently active virtual desktop (requires Windows 10 1607 or later). If **Always on top while waiting** is also enabled, the window stays above all other windows while `WaitingAck` is active and reverts to normal z-order once you acknowledge or snooze. If **Prevent system sleep** is enabled, a `SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)` wake lock is held on the main thread for the duration of the session, ensuring timers fire reliably even when the system would otherwise sleep. If **Pause on lock** is enabled, the timer is automatically paused when the Windows session is locked (via `WTSRegisterSessionNotification` / `WM_WTSSESSION_CHANGE`) and automatically resumed on unlock — but only if the pause was caused by the lock event, not by a manual user pause.
 - **Closing the app** – if the timer is `Stopped`, closing the window exits immediately. If a reminder session is active (`Running`, `Paused`, or `WaitingAck`), the app asks for confirmation before closing.
 - **Audio** – the alert tone uses the Web Audio API inside the WebView. It may be silenced by OS-level mute or by WebView autoplay restrictions in unusual configurations.
 - **Notifications** – delivered through the Windows Notification Center. The reminder still fires and the window still flashes even if notifications are blocked at the OS level.

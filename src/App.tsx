@@ -44,6 +44,9 @@ interface ReminderConfig {
   /** When true, minimizing the window hides it to the system tray.
    *  Windows only. */
   minimize_to_tray: boolean;
+  /** When true, the timer auto-pauses when the Windows session is locked and
+   *  auto-resumes on unlock. Windows only. */
+  pause_on_lock: boolean;
 }
 
 /** Possible states of the reminder timer. */
@@ -129,6 +132,7 @@ const DEFAULT_CONFIG: ReminderConfig = {
   always_on_top_while_waiting: false,
   keep_awake: false,
   minimize_to_tray: false,
+  pause_on_lock: false,
 };
 
 /** Default state when the app first loads. */
@@ -175,6 +179,7 @@ function App() {
   );
   const [formKeepAwake, setFormKeepAwake] = useState(DEFAULT_CONFIG.keep_awake);
   const [formMinimizeToTray, setFormMinimizeToTray] = useState(DEFAULT_CONFIG.minimize_to_tray);
+  const [formPauseOnLock, setFormPauseOnLock] = useState(DEFAULT_CONFIG.pause_on_lock);
   const [systemPrefersDark, setSystemPrefersDark] = useState(getSystemPrefersDark);
 
   // Whether to show the snooze button prominently (set true after a reminder fires).
@@ -287,6 +292,7 @@ function App() {
         setFormAlwaysOnTopWhileWaiting(snapshot.config.always_on_top_while_waiting);
         setFormKeepAwake(snapshot.config.keep_awake);
         setFormMinimizeToTray(snapshot.config.minimize_to_tray);
+        setFormPauseOnLock(snapshot.config.pause_on_lock);
         // Mark the initial load as done so subsequent changes auto-save.
         isInitialLoadRef.current = false;
       })
@@ -323,6 +329,7 @@ function App() {
         always_on_top_while_waiting: formAlwaysOnTopWhileWaiting,
         keep_awake: formKeepAwake,
         minimize_to_tray: formMinimizeToTray,
+        pause_on_lock: formPauseOnLock,
       };
 
       // save_config validates, persists to disk, and updates the in-memory config.
@@ -353,6 +360,7 @@ function App() {
     formAlwaysOnTopWhileWaiting,
     formKeepAwake,
     formMinimizeToTray,
+    formPauseOnLock,
   ]);
 
   useEffect(() => {
@@ -489,6 +497,16 @@ function App() {
         }
         unlisteners.push(reminderCompletedUnlisten);
 
+        const lockStateChangedUnlisten = await listen<StateSnapshot>("lock-state-changed", (e) => {
+          setRemState(e.payload);
+        });
+
+        if (disposed) {
+          lockStateChangedUnlisten();
+          return;
+        }
+        unlisteners.push(lockStateChangedUnlisten);
+
         const closeUnlisten = await appWindow.onCloseRequested(async (event) => {
           event.preventDefault();
 
@@ -596,6 +614,7 @@ function App() {
     always_on_top_while_waiting: formAlwaysOnTopWhileWaiting,
     keep_awake: formKeepAwake,
     minimize_to_tray: formMinimizeToTray,
+    pause_on_lock: formPauseOnLock,
   }), [
     formInterval,
     isInfinite,
@@ -612,6 +631,7 @@ function App() {
     formAlwaysOnTopWhileWaiting,
     formKeepAwake,
     formMinimizeToTray,
+    formPauseOnLock,
   ]);
 
   useEffect(() => {
@@ -1150,6 +1170,14 @@ function App() {
                     onChange={(e) => setFormMinimizeToTray(e.target.checked)}
                   />
                   <span>Minimize to system tray instead of taskbar (Windows)</span>
+                </label>
+                <label className="toggle-label">
+                  <input
+                    type="checkbox"
+                    checked={formPauseOnLock}
+                    onChange={(e) => setFormPauseOnLock(e.target.checked)}
+                  />
+                  <span>Pause timer when computer is locked, resume on unlock (Windows)</span>
                 </label>
               </div>
             </fieldset>

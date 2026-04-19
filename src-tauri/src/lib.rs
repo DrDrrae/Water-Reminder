@@ -118,6 +118,10 @@ pub struct ReminderConfig {
     /// of minimizing it to the taskbar. Windows only.
     #[serde(default)]
     pub minimize_to_tray: bool,
+    /// When `true`, the timer is automatically paused when the computer is
+    /// locked and resumed when it is unlocked.  Windows only.
+    #[serde(default)]
+    pub pause_on_lock: bool,
 }
 
 impl Default for ReminderConfig {
@@ -137,6 +141,7 @@ impl Default for ReminderConfig {
             always_on_top_while_waiting: false,
             keep_awake: false,
             minimize_to_tray: false,
+            pause_on_lock: false,
         }
     }
 }
@@ -189,7 +194,7 @@ impl AppState {
 }
 
 /// A serialisable snapshot of `AppState`, returned by all commands.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateSnapshot {
     pub status: ReminderStatus,
     pub config: ReminderConfig,
@@ -288,6 +293,92 @@ fn sync_minimize_to_tray_state(app_handle: &AppHandle, minimize_to_tray: bool) {
     }
 }
 
+/// Update the `AUTO_PAUSE_ON_LOCK_ENABLED` atomic to match the current config.
+#[cfg(target_os = "windows")]
+fn sync_pause_on_lock_state(enabled: bool) {
+    AUTO_PAUSE_ON_LOCK_ENABLED.store(enabled, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Auto-pause the timer because the Windows session was locked.
+///
+/// Only acts when the timer is `Running`; a user-initiated `Paused` state is
+/// left untouched.  Sets `AUTO_PAUSED_BY_LOCK` so that `auto_resume_from_lock`
+/// knows to restart the timer on unlock.
+#[cfg(target_os = "windows")]
+fn auto_pause_for_lock(state: &SharedState, app_handle: &AppHandle) {
+    use std::sync::atomic::Ordering;
+
+    let snap = {
+        let mut s = match state.lock() {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("[water-reminder] auto_pause_for_lock: lock failed: {e}");
+                return;
+            }
+        };
+        if s.status != ReminderStatus::Running {
+            return;
+        }
+        s.remaining_when_paused = s.next_fire_at.map(|t| {
+            t.checked_duration_since(Instant::now())
+                .unwrap_or(Duration::ZERO)
+        });
+        s.status = ReminderStatus::Paused;
+        s.next_fire_at = None;
+        // Bump generation so the timer thread exits cleanly.
+        s.thread_generation += 1;
+        AUTO_PAUSED_BY_LOCK.store(true, Ordering::Relaxed);
+        snapshot(&s)
+    };
+
+    // Notify the frontend so it can update the UI without waiting for its
+    // next poll cycle.
+    if let Err(e) = app_handle.emit("lock-state-changed", snap) {
+        eprintln!("[water-reminder] auto_pause_for_lock: emit failed: {e}");
+    }
+}
+
+/// Auto-resume the timer because the Windows session was unlocked.
+///
+/// Only acts when `AUTO_PAUSED_BY_LOCK` is set (i.e. the pause was caused by
+/// a lock event, not the user).  Clears the flag before returning.
+#[cfg(target_os = "windows")]
+fn auto_resume_from_lock(state: &SharedState, app_handle: &AppHandle) {
+    use std::sync::atomic::Ordering;
+
+    let (snap, my_gen) = {
+        let mut s = match state.lock() {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("[water-reminder] auto_resume_from_lock: lock failed: {e}");
+                AUTO_PAUSED_BY_LOCK.store(false, Ordering::Relaxed);
+                return;
+            }
+        };
+        // Clear the flag regardless of whether we resume, so stale flags do
+        // not cause unexpected resumes on a future unlock cycle.
+        AUTO_PAUSED_BY_LOCK.store(false, Ordering::Relaxed);
+        if s.status != ReminderStatus::Paused {
+            return;
+        }
+        let remaining = s
+            .remaining_when_paused
+            .unwrap_or_else(|| Duration::from_secs(s.config.interval_minutes as u64 * 60));
+        s.next_fire_at = Some(Instant::now() + remaining);
+        s.remaining_when_paused = None;
+        s.status = ReminderStatus::Running;
+        s.thread_generation += 1;
+        let my_gen = s.thread_generation;
+        (snapshot(&s), my_gen)
+    };
+
+    spawn_timer_thread(Arc::clone(state), app_handle.clone(), my_gen);
+
+    if let Err(e) = app_handle.emit("lock-state-changed", snap) {
+        eprintln!("[water-reminder] auto_resume_from_lock: emit failed: {e}");
+    }
+}
+
 /// Try to load a previously saved `ReminderConfig` from the on-disk store.
 /// Returns `None` if no config has been saved yet or if it cannot be parsed.
 fn load_config(app_handle: &AppHandle) -> Option<ReminderConfig> {
@@ -381,6 +472,7 @@ fn save_config(
     #[cfg(target_os = "windows")]
     {
         sync_minimize_to_tray_state(&app_handle, config.minimize_to_tray);
+        sync_pause_on_lock_state(config.pause_on_lock);
     }
 
     Ok(snap)
@@ -431,6 +523,7 @@ fn start_reminders(
     #[cfg(target_os = "windows")]
     {
         sync_minimize_to_tray_state(&app_handle, config.minimize_to_tray);
+        sync_pause_on_lock_state(config.pause_on_lock);
     }
 
     if config.keep_awake {
@@ -467,6 +560,10 @@ fn stop_reminders(
     let was_keep_awake = s.config.keep_awake;
     let snap = snapshot(&s);
     drop(s);
+    // Clear the lock-pause flag so a future unlock does not auto-resume a
+    // session that the user has explicitly stopped.
+    #[cfg(target_os = "windows")]
+    AUTO_PAUSED_BY_LOCK.store(false, std::sync::atomic::Ordering::Relaxed);
     // Clear any pending taskbar-flash / user-attention request.
     stop_window_attention(&app_handle);
     if was_keep_awake {
@@ -555,6 +652,8 @@ fn reset_reminders(
     let was_keep_awake = s.config.keep_awake;
     let snap = snapshot(&s);
     drop(s);
+    #[cfg(target_os = "windows")]
+    AUTO_PAUSED_BY_LOCK.store(false, std::sync::atomic::Ordering::Relaxed);
     // Clear any pending taskbar-flash / user-attention request.
     stop_window_attention(&app_handle);
     if was_keep_awake {
@@ -855,6 +954,28 @@ static MINIMIZE_TO_TRAY: std::sync::atomic::AtomicBool = std::sync::atomic::Atom
 #[cfg(target_os = "windows")]
 static ORIGINAL_WNDPROC: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
 
+/// When `true`, the timer is automatically paused when the Windows session
+/// is locked and resumed when it is unlocked.
+#[cfg(target_os = "windows")]
+static AUTO_PAUSE_ON_LOCK_ENABLED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Set to `true` when the timer was paused by a session-lock event so that
+/// we can auto-resume on unlock without resuming a user-initiated pause.
+#[cfg(target_os = "windows")]
+static AUTO_PAUSED_BY_LOCK: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Stored once during `setup` so that the WndProc (a bare function pointer)
+/// can access the app handle for emitting events and controlling the window.
+#[cfg(target_os = "windows")]
+static GLOBAL_APP_HANDLE: std::sync::OnceLock<AppHandle> = std::sync::OnceLock::new();
+
+/// Stored once during `setup` so that the WndProc can access the shared
+/// timer state in order to pause/resume the timer on lock/unlock.
+#[cfg(target_os = "windows")]
+static GLOBAL_SHARED_STATE: std::sync::OnceLock<SharedState> = std::sync::OnceLock::new();
+
 /// Window procedure that intercepts `WM_SYSCOMMAND / SC_MINIMIZE` when
 /// "minimize to tray" is active and hides the window instead of minimizing it.
 /// All other messages are forwarded to the original proc.
@@ -879,9 +1000,40 @@ unsafe extern "system" fn minimize_intercept_wndproc(
             }
         }
 
+        // WM_WTSSESSION_CHANGE fires when the Windows session is locked or
+        // unlocked.  We use it to auto-pause/resume the reminder timer.
+        const WM_WTSSESSION_CHANGE: u32 = 0x02B1;
+        const WTS_SESSION_LOCK: usize = 7;
+        const WTS_SESSION_UNLOCK: usize = 8;
+        if msg == WM_WTSSESSION_CHANGE {
+            if wparam == WTS_SESSION_LOCK && AUTO_PAUSE_ON_LOCK_ENABLED.load(Ordering::Relaxed) {
+                if let (Some(handle), Some(state)) =
+                    (GLOBAL_APP_HANDLE.get(), GLOBAL_SHARED_STATE.get())
+                {
+                    let handle = handle.clone();
+                    let state = Arc::clone(state);
+                    // Spawn so we never block the message pump with a mutex lock.
+                    std::thread::spawn(move || auto_pause_for_lock(&state, &handle));
+                }
+            } else if wparam == WTS_SESSION_UNLOCK
+                && AUTO_PAUSED_BY_LOCK.load(Ordering::Relaxed)
+            {
+                if let (Some(handle), Some(state)) =
+                    (GLOBAL_APP_HANDLE.get(), GLOBAL_SHARED_STATE.get())
+                {
+                    let handle = handle.clone();
+                    let state = Arc::clone(state);
+                    std::thread::spawn(move || auto_resume_from_lock(&state, &handle));
+                }
+            }
+            return 0;
+        }
+
         // Restore the original WndProc before the window is destroyed so that
         // we leave no dangling subclass reference behind.
         if msg == WM_NCDESTROY {
+            use windows_sys::Win32::System::RemoteDesktop::WTSUnRegisterSessionNotification;
+            WTSUnRegisterSessionNotification(hwnd);
             let orig = ORIGINAL_WNDPROC.load(Ordering::Relaxed);
             if orig != 0 {
                 SetWindowLongPtrW(hwnd, GWLP_WNDPROC, orig);
@@ -952,7 +1104,21 @@ fn install_minimize_wndproc_hook(app_handle: &AppHandle) {
                 eprintln!(
                     "[water-reminder] SetWindowLongPtrW failed; cannot install minimize hook (error code {err})."
                 );
+                return;
             }
+        }
+
+        // Register this window to receive WM_WTSSESSION_CHANGE so that the
+        // WndProc can auto-pause/resume the timer on lock/unlock events.
+        use windows_sys::Win32::System::RemoteDesktop::{
+            NOTIFY_FOR_THIS_SESSION, WTSRegisterSessionNotification,
+        };
+        if WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION) == 0 {
+            let err = GetLastError();
+            eprintln!(
+                "[water-reminder] WTSRegisterSessionNotification failed (error {err}); \
+                 auto-pause on lock will not work."
+            );
         }
     }
 }
@@ -1376,7 +1542,18 @@ pub fn run() {
                 .unwrap_or(false);
 
             #[cfg(target_os = "windows")]
-            sync_minimize_to_tray_state(app.handle(), tray_visible);
+            {
+                sync_minimize_to_tray_state(app.handle(), tray_visible);
+                let pause_on_lock = app
+                    .state::<SharedState>()
+                    .lock()
+                    .map(|s| s.config.pause_on_lock)
+                    .unwrap_or(false);
+                sync_pause_on_lock_state(pause_on_lock);
+                // Store globals for use by the WndProc bare function pointer.
+                let _ = GLOBAL_APP_HANDLE.set(app.handle().clone());
+                let _ = GLOBAL_SHARED_STATE.set(Arc::clone(&*app.state::<SharedState>()));
+            }
 
             {
                 use tauri::menu::{Menu, MenuItem};
