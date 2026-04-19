@@ -308,6 +308,10 @@ fn sync_pause_on_lock_state(enabled: bool) {
 fn auto_pause_for_lock(state: &SharedState, app_handle: &AppHandle) {
     use std::sync::atomic::Ordering;
 
+    if !SESSION_IS_LOCKED.load(Ordering::Relaxed) {
+        return;
+    }
+
     let snap = {
         let mut s = match state.lock() {
             Ok(s) => s,
@@ -355,6 +359,12 @@ fn auto_resume_from_lock(state: &SharedState, app_handle: &AppHandle) {
                 return;
             }
         };
+        if SESSION_IS_LOCKED.load(Ordering::Relaxed) {
+            return;
+        }
+        if !AUTO_PAUSED_BY_LOCK.load(Ordering::Relaxed) {
+            return;
+        }
         // Clear the flag regardless of whether we resume, so stale flags do
         // not cause unexpected resumes on a future unlock cycle.
         AUTO_PAUSED_BY_LOCK.store(false, Ordering::Relaxed);
@@ -966,6 +976,11 @@ static AUTO_PAUSE_ON_LOCK_ENABLED: std::sync::atomic::AtomicBool =
 static AUTO_PAUSED_BY_LOCK: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
+/// Tracks current session lock state from WTS notifications so lock/unlock
+/// workers can ignore stale events that arrive out of order.
+#[cfg(target_os = "windows")]
+static SESSION_IS_LOCKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// Stored once during `setup` so that the WndProc (a bare function pointer)
 /// can access the app handle for emitting events and controlling the window.
 #[cfg(target_os = "windows")]
@@ -1007,6 +1022,7 @@ unsafe extern "system" fn minimize_intercept_wndproc(
         const WTS_SESSION_UNLOCK: usize = 8;
         if msg == WM_WTSSESSION_CHANGE {
             if wparam == WTS_SESSION_LOCK && AUTO_PAUSE_ON_LOCK_ENABLED.load(Ordering::Relaxed) {
+                SESSION_IS_LOCKED.store(true, Ordering::Relaxed);
                 if let (Some(handle), Some(state)) =
                     (GLOBAL_APP_HANDLE.get(), GLOBAL_SHARED_STATE.get())
                 {
@@ -1015,9 +1031,8 @@ unsafe extern "system" fn minimize_intercept_wndproc(
                     // Spawn so we never block the message pump with a mutex lock.
                     std::thread::spawn(move || auto_pause_for_lock(&state, &handle));
                 }
-            } else if wparam == WTS_SESSION_UNLOCK
-                && AUTO_PAUSED_BY_LOCK.load(Ordering::Relaxed)
-            {
+            } else if wparam == WTS_SESSION_UNLOCK {
+                SESSION_IS_LOCKED.store(false, Ordering::Relaxed);
                 if let (Some(handle), Some(state)) =
                     (GLOBAL_APP_HANDLE.get(), GLOBAL_SHARED_STATE.get())
                 {
