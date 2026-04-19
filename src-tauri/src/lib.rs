@@ -248,17 +248,15 @@ fn validate_config(config: &ReminderConfig) -> Result<(), String> {
 /// the user from continuing to use the app.
 fn persist_config(app_handle: &AppHandle, config: &ReminderConfig) {
     match app_handle.store(STORE_FILE) {
-        Ok(store) => {
-            match serde_json::to_value(config) {
-                Ok(value) => {
-                    store.set(STORE_KEY_CONFIG, value);
-                    if let Err(e) = store.save() {
-                        eprintln!("[water-reminder] Failed to save config: {e}");
-                    }
+        Ok(store) => match serde_json::to_value(config) {
+            Ok(value) => {
+                store.set(STORE_KEY_CONFIG, value);
+                if let Err(e) = store.save() {
+                    eprintln!("[water-reminder] Failed to save config: {e}");
                 }
-                Err(e) => eprintln!("[water-reminder] Failed to serialise config: {e}"),
             }
-        }
+            Err(e) => eprintln!("[water-reminder] Failed to serialise config: {e}"),
+        },
         Err(e) => eprintln!("[water-reminder] Failed to open store: {e}"),
     }
 }
@@ -277,7 +275,7 @@ fn sync_minimize_to_tray_state(app_handle: &AppHandle, minimize_to_tray: bool) {
             let hwnd_val = hwnd as usize;
             let _ = app_handle.run_on_main_thread(move || {
                 use windows_sys::Win32::UI::WindowsAndMessaging::{
-                    IsWindowVisible, ShowWindow, SW_SHOWNA,
+                    IsWindowVisible, SW_SHOWNA, ShowWindow,
                 };
                 let hwnd = hwnd_val as windows_sys::Win32::Foundation::HWND;
                 unsafe {
@@ -417,9 +415,8 @@ fn start_reminders(
     s.remaining_when_paused = None;
 
     // Schedule the first reminder.
-    s.next_fire_at = Some(
-        Instant::now() + Duration::from_secs(s.config.interval_minutes as u64 * 60),
-    );
+    s.next_fire_at =
+        Some(Instant::now() + Duration::from_secs(s.config.interval_minutes as u64 * 60));
 
     // Bump the generation counter so any lingering old thread exits.
     s.thread_generation += 1;
@@ -529,10 +526,15 @@ fn resume_reminders(
     s.thread_generation += 1;
     let my_gen = s.thread_generation;
 
+    let minimize = s.config.minimize_on_acknowledge;
     let snap = snapshot(&s);
     drop(s);
 
-    spawn_timer_thread(Arc::clone(&*state), app_handle, my_gen);
+    spawn_timer_thread(Arc::clone(&*state), app_handle.clone(), my_gen);
+
+    if minimize {
+        minimize_window(&app_handle);
+    }
 
     Ok(snap)
 }
@@ -588,13 +590,18 @@ fn snooze_reminder(
     s.thread_generation += 1;
     let my_gen = s.thread_generation;
 
+    let minimize = s.config.minimize_on_acknowledge;
     let snap = snapshot(&s);
     drop(s);
 
     // Clear any pending taskbar-flash / user-attention request.
     stop_window_attention(&app_handle);
 
-    spawn_timer_thread(Arc::clone(&*state), app_handle, my_gen);
+    spawn_timer_thread(Arc::clone(&*state), app_handle.clone(), my_gen);
+
+    if minimize {
+        minimize_window(&app_handle);
+    }
 
     Ok(snap)
 }
@@ -614,9 +621,8 @@ fn reset_active_countdown(
         return Err("Countdown can only be reset while reminders are running.".into());
     }
 
-    s.next_fire_at = Some(
-        Instant::now() + Duration::from_secs(s.config.interval_minutes as u64 * 60),
-    );
+    s.next_fire_at =
+        Some(Instant::now() + Duration::from_secs(s.config.interval_minutes as u64 * 60));
     s.remaining_when_paused = None;
     let should_minimize = s.config.minimize_on_acknowledge;
 
@@ -660,9 +666,8 @@ fn acknowledge_reminder(
     // Schedule the next full interval and transition back to Running.
     // The timer thread is still looping with the current generation; it will
     // detect the Running status and new fire time on its next iteration.
-    s.next_fire_at = Some(
-        Instant::now() + Duration::from_secs(s.config.interval_minutes as u64 * 60),
-    );
+    s.next_fire_at =
+        Some(Instant::now() + Duration::from_secs(s.config.interval_minutes as u64 * 60));
     s.status = ReminderStatus::Running;
     let should_minimize = s.config.minimize_on_acknowledge;
 
@@ -729,10 +734,8 @@ fn spawn_timer_thread(state: SharedState, app_handle: AppHandle, my_gen: u64) {
                     }
                     ReminderStatus::Running => {
                         // Check whether the fire time has arrived.
-                        let should_fire = s
-                            .next_fire_at
-                            .map(|t| Instant::now() >= t)
-                            .unwrap_or(false);
+                        let should_fire =
+                            s.next_fire_at.map(|t| Instant::now() >= t).unwrap_or(false);
 
                         if !should_fire {
                             fire_info = None;
@@ -783,7 +786,9 @@ fn spawn_timer_thread(state: SharedState, app_handle: AppHandle, my_gen: u64) {
             }
 
             // ── Send notification & emit events (lock NOT held) ───────────
-            if let Some((count, is_last, focus_window, flash_taskbar, release_wake_lock)) = fire_info {
+            if let Some((count, is_last, focus_window, flash_taskbar, release_wake_lock)) =
+                fire_info
+            {
                 // Send desktop notification.
                 send_notification(&app_handle);
 
@@ -843,14 +848,12 @@ fn bring_window_to_front(app_handle: &AppHandle) {
 /// Read from the WndProc callback and from `minimize_window`, both of which
 /// cannot take normal Rust parameters at their call sites.
 #[cfg(target_os = "windows")]
-static MINIMIZE_TO_TRAY: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+static MINIMIZE_TO_TRAY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// The original window procedure, saved so the subclassed proc can forward
 /// unhandled messages correctly and restore it on `WM_NCDESTROY`.
 #[cfg(target_os = "windows")]
-static ORIGINAL_WNDPROC: std::sync::atomic::AtomicIsize =
-    std::sync::atomic::AtomicIsize::new(0);
+static ORIGINAL_WNDPROC: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
 
 /// Window procedure that intercepts `WM_SYSCOMMAND / SC_MINIMIZE` when
 /// "minimize to tray" is active and hides the window instead of minimizing it.
@@ -863,43 +866,44 @@ unsafe extern "system" fn minimize_intercept_wndproc(
     lparam: windows_sys::Win32::Foundation::LPARAM,
 ) -> windows_sys::Win32::Foundation::LRESULT {
     unsafe {
-    use std::sync::atomic::Ordering;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        CallWindowProcW, GWLP_WNDPROC, SC_MINIMIZE, SW_HIDE, SetWindowLongPtrW, ShowWindow,
-        WM_NCDESTROY, WM_SYSCOMMAND,
-    };
+        use std::sync::atomic::Ordering;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            CallWindowProcW, GWLP_WNDPROC, SC_MINIMIZE, SW_HIDE, SetWindowLongPtrW, ShowWindow,
+            WM_NCDESTROY, WM_SYSCOMMAND,
+        };
 
-    if msg == WM_SYSCOMMAND && (wparam & 0xFFF0) == SC_MINIMIZE as usize {
-        if MINIMIZE_TO_TRAY.load(Ordering::Relaxed) {
-            ShowWindow(hwnd, SW_HIDE);
-            return 0;
+        if msg == WM_SYSCOMMAND && (wparam & 0xFFF0) == SC_MINIMIZE as usize {
+            if MINIMIZE_TO_TRAY.load(Ordering::Relaxed) {
+                ShowWindow(hwnd, SW_HIDE);
+                return 0;
+            }
         }
-    }
 
-    // Restore the original WndProc before the window is destroyed so that
-    // we leave no dangling subclass reference behind.
-    if msg == WM_NCDESTROY {
+        // Restore the original WndProc before the window is destroyed so that
+        // we leave no dangling subclass reference behind.
+        if msg == WM_NCDESTROY {
+            let orig = ORIGINAL_WNDPROC.load(Ordering::Relaxed);
+            if orig != 0 {
+                SetWindowLongPtrW(hwnd, GWLP_WNDPROC, orig);
+            }
+        }
+
         let orig = ORIGINAL_WNDPROC.load(Ordering::Relaxed);
-        if orig != 0 {
-            SetWindowLongPtrW(hwnd, GWLP_WNDPROC, orig);
+        if orig == 0 {
+            return 0; // Safety fallback; should never reach here in normal use.
         }
-    }
 
-    let orig = ORIGINAL_WNDPROC.load(Ordering::Relaxed);
-    if orig == 0 {
-        return 0; // Safety fallback; should never reach here in normal use.
-    }
-
-    // Safety: `orig` holds the function pointer that was stored by
-    // `install_minimize_wndproc_hook`.  Its type matches the WNDPROC signature.
-    type WndProcFn = unsafe extern "system" fn(
-        windows_sys::Win32::Foundation::HWND,
-        u32,
-        windows_sys::Win32::Foundation::WPARAM,
-        windows_sys::Win32::Foundation::LPARAM,
-    ) -> windows_sys::Win32::Foundation::LRESULT;
-    let orig_fn: WndProcFn = std::mem::transmute(orig as usize);
-    CallWindowProcW(Some(orig_fn), hwnd, msg, wparam, lparam)
+        // Safety: `orig` holds the function pointer that was stored by
+        // `install_minimize_wndproc_hook`.  Its type matches the WNDPROC signature.
+        type WndProcFn = unsafe extern "system" fn(
+            windows_sys::Win32::Foundation::HWND,
+            u32,
+            windows_sys::Win32::Foundation::WPARAM,
+            windows_sys::Win32::Foundation::LPARAM,
+        )
+            -> windows_sys::Win32::Foundation::LRESULT;
+        let orig_fn: WndProcFn = std::mem::transmute(orig as usize);
+        CallWindowProcW(Some(orig_fn), hwnd, msg, wparam, lparam)
     }
 }
 
@@ -920,24 +924,34 @@ fn install_minimize_wndproc_hook(app_handle: &AppHandle) {
     }
 
     let Some(hwnd) = hwnd_from_main_window(app_handle) else {
-        eprintln!("[water-reminder] Could not get HWND; OS minimize button will not redirect to tray.");
+        eprintln!(
+            "[water-reminder] Could not get HWND; OS minimize button will not redirect to tray."
+        );
         return;
     };
 
     unsafe {
         let orig = GetWindowLongPtrW(hwnd, GWLP_WNDPROC);
         if orig == 0 {
-            eprintln!("[water-reminder] GetWindowLongPtrW returned 0; cannot install minimize hook.");
+            eprintln!(
+                "[water-reminder] GetWindowLongPtrW returned 0; cannot install minimize hook."
+            );
             return;
         }
         ORIGINAL_WNDPROC.store(orig, std::sync::atomic::Ordering::Relaxed);
         SetLastError(0);
-        let prev = SetWindowLongPtrW(hwnd, GWLP_WNDPROC, minimize_intercept_wndproc as *const () as isize);
+        let prev = SetWindowLongPtrW(
+            hwnd,
+            GWLP_WNDPROC,
+            minimize_intercept_wndproc as *const () as isize,
+        );
         if prev == 0 {
             let err = GetLastError();
             if err != 0 {
                 ORIGINAL_WNDPROC.store(0, std::sync::atomic::Ordering::Relaxed);
-                eprintln!("[water-reminder] SetWindowLongPtrW failed; cannot install minimize hook (error code {err}).");
+                eprintln!(
+                    "[water-reminder] SetWindowLongPtrW failed; cannot install minimize hook (error code {err})."
+                );
             }
         }
     }
@@ -977,9 +991,7 @@ fn hwnd_from_main_window(app_handle: &AppHandle) -> Option<windows_sys::Win32::F
 /// by the Tauri/WRY runtime, so no extra `CoInitializeEx` is needed.
 /// Silently no-ops on any failure (unsupported OS version, COM init, etc.).
 #[cfg(target_os = "windows")]
-fn move_to_current_virtual_desktop_main_thread(
-    hwnd_sys: windows_sys::Win32::Foundation::HWND,
-) {
+fn move_to_current_virtual_desktop_main_thread(hwnd_sys: windows_sys::Win32::Foundation::HWND) {
     use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
     use windows::Win32::UI::Shell::IVirtualDesktopManager;
     use windows::core::GUID;
@@ -1043,9 +1055,16 @@ fn bring_window_to_front_without_focus_on_windows(app_handle: &AppHandle) {
     //     only required for cross-thread calls, not main-thread calls.
     if let Err(e) = app_handle.run_on_main_thread(move || {
         use windows_sys::Win32::UI::WindowsAndMessaging::{
-            HWND_NOTOPMOST, HWND_TOPMOST, IsWindowVisible,
-            SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-            SW_SHOW, SW_SHOWNOACTIVATE, SetWindowPos, ShowWindow,
+            //SW_SHOW,
+            HWND_NOTOPMOST,
+            HWND_TOPMOST,
+            IsWindowVisible,
+            SW_SHOWNOACTIVATE,
+            SWP_NOACTIVATE,
+            SWP_NOMOVE,
+            SWP_NOSIZE,
+            SetWindowPos,
+            ShowWindow,
         };
         let hwnd = hwnd_val as windows_sys::Win32::Foundation::HWND;
 
@@ -1053,10 +1072,15 @@ fn bring_window_to_front_without_focus_on_windows(app_handle: &AppHandle) {
 
         unsafe {
             if IsWindowVisible(hwnd) == 0 {
-                // Window is fully hidden (e.g. in system tray).  Use SW_SHOW
-                // (which activates the window) rather than SW_SHOWNA so the
-                // window is reliably brought out of tray-hidden state.
-                ShowWindow(hwnd, SW_SHOW);
+                // Window is fully hidden (e.g. in system tray).  SW_SHOW is
+                // intentional here: a non-activating command (SW_SHOWNOACTIVATE)
+                // is unreliable for restoring a window hidden via SW_HIDE.
+                // bring_window_to_front exists to demand the user's attention, so
+                // activating the window on this one restore-from-tray path is fine.
+                //ShowWindow(hwnd, SW_SHOW);
+                // Changed to SW_SHOWNOACTIVATE to avoid stealing focus when the user has
+                // as a test. Do not change this back unless this is actually an issue.
+                ShowWindow(hwnd, SW_SHOWNOACTIVATE);
             } else {
                 // Window is visible or minimized; raise without stealing focus.
                 ShowWindow(hwnd, SW_SHOWNOACTIVATE);
@@ -1104,21 +1128,14 @@ fn minimize_window(app_handle: &AppHandle) {
     };
     let hwnd_val = hwnd as usize;
     let use_tray = MINIMIZE_TO_TRAY.load(std::sync::atomic::Ordering::Relaxed);
-    eprintln!("[water-reminder] minimize_window: use_tray={use_tray}");
     if let Err(e) = app_handle.run_on_main_thread(move || {
         use windows_sys::Win32::UI::WindowsAndMessaging::{
-            IsWindowVisible, ShowWindow, SW_HIDE, SW_MINIMIZE, SW_SHOWNORMAL,
+            IsWindowVisible, SW_HIDE, SW_MINIMIZE, SW_SHOWNORMAL, ShowWindow,
         };
         let hwnd = hwnd_val as windows_sys::Win32::Foundation::HWND;
         unsafe {
             if use_tray {
-                let visible_before = IsWindowVisible(hwnd) != 0;
-                let ret = ShowWindow(hwnd, SW_HIDE);
-                let visible_after = IsWindowVisible(hwnd) != 0;
-                eprintln!(
-                    "[water-reminder] minimize_window(tray): visible_before={visible_before} \
-                     SW_HIDE_ret={ret} visible_after={visible_after}"
-                );
+                ShowWindow(hwnd, SW_HIDE);
             } else {
                 if IsWindowVisible(hwnd) == 0 {
                     // Window is hidden (was previously in the tray); show at
@@ -1146,8 +1163,8 @@ fn restore_window_from_tray(app_handle: &AppHandle) {
     let hwnd_val = hwnd as usize;
     let _ = app_handle.run_on_main_thread(move || {
         use windows_sys::Win32::UI::WindowsAndMessaging::{
-            SetForegroundWindow, SetWindowPos, ShowWindow,
-            HWND_NOTOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SW_SHOW,
+            HWND_NOTOPMOST, SW_SHOW, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetForegroundWindow,
+            SetWindowPos, ShowWindow,
         };
         let hwnd = hwnd_val as windows_sys::Win32::Foundation::HWND;
         unsafe {
@@ -1158,7 +1175,7 @@ fn restore_window_from_tray(app_handle: &AppHandle) {
             // for always_on_top_while_waiting skips setAlwaysOnTop(false) in
             // tray+acknowledge mode to prevent tao from re-showing the window;
             // we compensate here so the window is not topmost after restore.
-            SetWindowPos(
+            if SetWindowPos(
                 hwnd,
                 HWND_NOTOPMOST,
                 0,
@@ -1166,7 +1183,12 @@ fn restore_window_from_tray(app_handle: &AppHandle) {
                 0,
                 0,
                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
-            );
+            ) == 0
+            {
+                eprintln!(
+                    "[water-reminder] restore_window_from_tray: SetWindowPos(NOTOPMOST) failed"
+                );
+            }
         }
     });
 }
@@ -1189,7 +1211,7 @@ fn stop_window_attention(app_handle: &AppHandle) {
 fn flash_window_taskbar_windows(app_handle: &AppHandle) {
     use windows_sys::Win32::{
         Foundation::{GetLastError, SetLastError},
-        UI::WindowsAndMessaging::{FlashWindowEx, FLASHWINFO, FLASHW_ALL, FLASHW_TIMERNOFG},
+        UI::WindowsAndMessaging::{FLASHW_ALL, FLASHW_TIMERNOFG, FLASHWINFO, FlashWindowEx},
     };
 
     let Some(hwnd) = hwnd_from_main_window(app_handle) else {
@@ -1209,7 +1231,9 @@ fn flash_window_taskbar_windows(app_handle: &AppHandle) {
         FlashWindowEx(&flash_info);
         let err = GetLastError();
         if err != 0 {
-            eprintln!("[water-reminder] FlashWindowEx failed to start taskbar flash (error code {err}).");
+            eprintln!(
+                "[water-reminder] FlashWindowEx failed to start taskbar flash (error code {err})."
+            );
         }
     }
 }
@@ -1221,7 +1245,7 @@ fn flash_window_taskbar_windows(app_handle: &AppHandle) {
 fn stop_window_attention_windows(app_handle: &AppHandle) {
     use windows_sys::Win32::{
         Foundation::{GetLastError, SetLastError},
-        UI::WindowsAndMessaging::{FlashWindowEx, FLASHWINFO, FLASHW_STOP},
+        UI::WindowsAndMessaging::{FLASHW_STOP, FLASHWINFO, FlashWindowEx},
     };
 
     let Some(hwnd) = hwnd_from_main_window(app_handle) else {
@@ -1240,7 +1264,9 @@ fn stop_window_attention_windows(app_handle: &AppHandle) {
         FlashWindowEx(&flash_info);
         let err = GetLastError();
         if err != 0 {
-            eprintln!("[water-reminder] FlashWindowEx failed to stop taskbar flash (error code {err}).");
+            eprintln!(
+                "[water-reminder] FlashWindowEx failed to stop taskbar flash (error code {err})."
+            );
         }
     }
 }
@@ -1271,8 +1297,6 @@ fn activate_wake_lock(app_handle: &AppHandle) {
     }
 }
 
-
-
 /// Release the wake lock previously acquired by `activate_wake_lock`.
 ///
 /// Calling `SetThreadExecutionState(ES_CONTINUOUS)` is safe even when no wake
@@ -1293,8 +1317,6 @@ fn deactivate_wake_lock(app_handle: &AppHandle) {
         eprintln!("[water-reminder] deactivate_wake_lock: run_on_main_thread failed: {e}");
     }
 }
-
-
 
 // ── Application entry point ───────────────────────────────────────────────────
 
@@ -1362,8 +1384,7 @@ pub fn run() {
 
                 let show_item =
                     MenuItem::with_id(app, "show", "Show Water Reminder", true, None::<&str>)?;
-                let quit_item =
-                    MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+                let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
                 let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
 
                 let tray_icon = app.default_window_icon().cloned().ok_or_else(|| {

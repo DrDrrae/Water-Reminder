@@ -1133,7 +1133,7 @@ function App() {
                     checked={formMinimizeOnAcknowledge}
                     onChange={(e) => setFormMinimizeOnAcknowledge(e.target.checked)}
                   />
-                  <span>Minimize window to taskbar when starting or acknowledging reminders</span>
+                  <span>Minimize window when starting, resuming, snoozing, or acknowledging reminders</span>
                 </label>
                 <label className="toggle-label">
                   <input
