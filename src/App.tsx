@@ -412,9 +412,20 @@ function App() {
     void appWindow.setAlwaysOnTop(true);
 
     return () => {
+      // When the window is about to be hidden to the system tray
+      // (minimize_to_tray + minimize_on_acknowledge are both on), skip the
+      // Tauri setAlwaysOnTop(false) call.  tao's apply_diff unconditionally
+      // calls ShowWindow(SW_SHOW) whenever its internal VISIBLE flag is true —
+      // and since our direct SW_HIDE bypasses tao's visibility tracking, tao
+      // still believes the window is visible and would immediately re-show it.
+      // HWND_NOTOPMOST is cleared instead by bring_window_to_front /
+      // restore_window_from_tray the next time the window is shown.
+      if (formMinimizeToTray && formMinimizeOnAcknowledge) {
+        return;
+      }
       void appWindow.setAlwaysOnTop(false);
     };
-  }, [remState.status, formFocusWindow, formAlwaysOnTopWhileWaiting]);
+  }, [remState.status, formFocusWindow, formAlwaysOnTopWhileWaiting, formMinimizeToTray, formMinimizeOnAcknowledge]);
 
   useEffect(() => {
     const previousStatus = previousReminderStatusRef.current;
@@ -1122,7 +1133,7 @@ function App() {
                     checked={formMinimizeOnAcknowledge}
                     onChange={(e) => setFormMinimizeOnAcknowledge(e.target.checked)}
                   />
-                  <span>Minimize window to taskbar when starting or acknowledging reminders</span>
+                  <span>Minimize window when starting, resuming, snoozing, or acknowledging reminders</span>
                 </label>
                 <label className="toggle-label">
                   <input
