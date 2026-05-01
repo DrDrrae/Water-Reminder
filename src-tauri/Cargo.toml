@@ -1,6 +1,6 @@
 [package]
 name = "water-reminder"
-version = "0.2.1"
+version = "0.3.0"
 description = "A configurable water reminder application built with Tauri v2"
 authors = []
 edition = "2024"
@@ -13,11 +13,11 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 # tauri-build must be called from build.rs to generate the Tauri plumbing.
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2.6", features = [] }
 
 [dependencies]
 # Core Tauri framework
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "2.11", features = ["tray-icon"] }
 
 # Desktop notification plugin
 tauri-plugin-notification = "2"
