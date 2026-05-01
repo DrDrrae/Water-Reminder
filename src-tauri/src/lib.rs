@@ -54,8 +54,7 @@ pub fn run() {
             platform::setup(app.handle(), &shared_state);
 
             // Sync config-derived atomics with the loaded config.
-            {
-                let s = shared_state.lock().unwrap();
+            if let Ok(s) = shared_state.lock() {
                 platform::sync_minimize_to_tray_state(app.handle(), s.config.minimize_to_tray);
                 platform::sync_pause_on_lock_state(s.config.pause_on_lock);
             }

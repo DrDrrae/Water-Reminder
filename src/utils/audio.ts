@@ -25,7 +25,7 @@ export function playAlertSound(): void {
     osc.start(ctx.currentTime);
     osc.stop(ctx.currentTime + 0.65);
     osc.onended = () => void ctx.close();
-  } catch (e) {
-    console.error("[water-reminder] Failed to play alert sound:", e);
+  } catch {
+    // Silently ignore — audio unavailable or blocked.
   }
 }

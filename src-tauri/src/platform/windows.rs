@@ -496,12 +496,14 @@ pub(crate) fn flash_window_taskbar(app_handle: &AppHandle) {
             dwTimeout: 0,
         };
         SetLastError(0);
-        FlashWindowEx(&flash_info);
-        let err = GetLastError();
-        if err != 0 {
-            eprintln!(
-                "[water-reminder] FlashWindowEx failed to start taskbar flash (error {err})."
-            );
+        let ok = FlashWindowEx(&flash_info);
+        if ok == 0 {
+            let err = GetLastError();
+            if err != 0 {
+                eprintln!(
+                    "[water-reminder] FlashWindowEx failed to start taskbar flash (error {err})."
+                );
+            }
         }
     }
 }
@@ -526,12 +528,14 @@ pub(crate) fn stop_window_attention(app_handle: &AppHandle) {
             dwTimeout: 0,
         };
         SetLastError(0);
-        FlashWindowEx(&flash_info);
-        let err = GetLastError();
-        if err != 0 {
-            eprintln!(
-                "[water-reminder] FlashWindowEx failed to stop taskbar flash (error {err})."
-            );
+        let ok = FlashWindowEx(&flash_info);
+        if ok == 0 {
+            let err = GetLastError();
+            if err != 0 {
+                eprintln!(
+                    "[water-reminder] FlashWindowEx failed to stop taskbar flash (error {err})."
+                );
+            }
         }
     }
 }

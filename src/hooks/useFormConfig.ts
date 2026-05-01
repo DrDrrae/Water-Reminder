@@ -1,5 +1,6 @@
-// hooks/useFormConfig.ts — manages all 15 settings form fields, auto-save, and
-// config serialisation. Owns the debounce timer and initial-load flag.
+// hooks/useFormConfig.ts — manages all ReminderConfig settings fields plus the
+// isInfinite helper field, auto-save, and config serialisation.
+// Owns the debounce timer and initial-load flag.
 
 import {
   useState,
