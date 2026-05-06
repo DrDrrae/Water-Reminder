@@ -132,6 +132,8 @@ Settings are stored in `settings.json` in `%APPDATA%\water-reminder\`.
 - [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) — usually pre-installed on Windows 11; may need manual install on Windows 10.
 - [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with the **Desktop development with C++** workload selected.
 
+Further details: [Prerequisites | Tauri](https://v2.tauri.app/start/prerequisites/)
+
 ---
 
 ## Build and run
