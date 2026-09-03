@@ -39,6 +39,9 @@ function App() {
       .catch((e: unknown) => setError(String(e)));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Set by handleAcknowledge only, so Stop/Pause/Reset/Snooze always clear always-on-top.
+  const suppressAlwaysOnTopClearRef = useRef(false);
+
   // Always-on-top: managed in the frontend so it tracks React state precisely.
   // Skip Tauri's setAlwaysOnTop(false) when tray-hiding would cause tao to re-show the window.
   useEffect(() => {
@@ -53,8 +56,11 @@ function App() {
     void appWindow.setAlwaysOnTop(true);
     return () => {
       // tao calls ShowWindow(SW_SHOW) on setAlwaysOnTop(false) when its visibility
-      // cache is stale from our direct SW_HIDE; skip if tray-hide is about to happen.
-      if (form.formMinimizeToTray && form.formMinimizeOnAcknowledge) return;
+      // cache is stale from our direct SW_HIDE; skip only when acknowledge is about to tray-hide.
+      if (suppressAlwaysOnTopClearRef.current) {
+        suppressAlwaysOnTopClearRef.current = false;
+        return;
+      }
       void appWindow.setAlwaysOnTop(false);
     };
   }, [
@@ -154,12 +160,13 @@ function App() {
 
   const handleAcknowledge = useCallback(async () => {
     setError(null);
+    suppressAlwaysOnTopClearRef.current = form.formMinimizeToTray && form.formMinimizeOnAcknowledge;
     try {
       setRemState(await api.acknowledgeReminder());
       setShowSnoozeBanner(false);
       clearFlashEffect();
     } catch (e) { setError(String(e)); }
-  }, [clearFlashEffect, setShowSnoozeBanner]);
+  }, [clearFlashEffect, setShowSnoozeBanner, form.formMinimizeToTray, form.formMinimizeOnAcknowledge]);
 
   const handleDrinkWater = useCallback(async () => {
     setError(null);
